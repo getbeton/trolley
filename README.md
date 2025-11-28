@@ -27,6 +27,14 @@ you need to regenerate components, run `npx shadcn@latest add <component>` from
 within `app/`. All generated UI lives under `src/components/ui`, with shared
 helpers in `src/lib`.
 
+### API surface
+
+- `app/src/server/api` – tRPC routers for credentials, entity metadata, and
+  selection persistence.
+- `/api/trpc` – HTTP endpoint that fronts the tRPC router (supports GET + POST).
+- `/api/health` – lightweight JSON health probe surfaced for curl-based smoke
+  tests.
+
 ## Working With The Attio Toolkit
 
 1. `cd attio-tools`

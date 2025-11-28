@@ -62,11 +62,28 @@ npx prisma migrate diff \
   --script > prisma/migrations/$(date +%Y%m%d)_init/migration.sql
 ```
 
+## API Surface
+
+- `src/server/api` contains the tRPC routers (credentials, entities, selections)
+  plus the shared `createContext`.
+- Requests are served through `/api/trpc` (supports POST + GET). Example:
+
+  ```bash
+  curl "http://localhost:3000/api/trpc/health?input=%7B%7D"
+  ```
+
+- A convenience `/api/health` route returns JSON so we can curl the deployment:
+
+  ```bash
+  curl http://localhost:3000/api/health
+  ```
+
 ## Project Structure Highlights
 
 - `src/app` – App Router entrypoints, layouts, and future wizard routes.
 - `src/components/ui` – shadcn/ui primitives generated via `npx shadcn add`.
 - `src/lib/utils.ts` – Tailwind-aware `cn` helper.
+- `src/lib/trpc/client.ts` – React Query bindings for the new tRPC backend.
 - `prisma/` – Prisma schema + tracked SQL migrations.
 
 Keep `task_logs/` at the repo root updated per task (see root README). All new

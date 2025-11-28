@@ -1,6 +1,5 @@
 generator client {
   provider = "prisma-client-js"
-  output   = "../src/generated/prisma"
 }
 
 datasource db {
@@ -85,6 +84,7 @@ model FieldSelection {
   targetMappings FieldMapping[] @relation("TargetFieldMappings")
 
   @@index([entitySelectionId, fieldName], name: "idx_field_selection_entity_field")
+  @@unique([entitySelectionId, fieldName], map: "entity_field_unique")
 }
 
 /// High-level migration configuration users review before executing.
