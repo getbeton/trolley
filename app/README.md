@@ -1,36 +1,73 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+## Tech Stack
 
-## Getting Started
+- Next.js 16 (App Router) + TypeScript
+- Tailwind CSS 3 with the full shadcn/ui registry (New York theme, blue accent)
+- Prisma ORM targeting PostgreSQL (`app/prisma/schema.prisma`)
+- tRPC + TanStack Query (hooks TBD in upcoming tasks)
 
-First, run the development server:
+## Prerequisites
+
+- Node.js 20+
+- PostgreSQL 14+ (local or managed)
+- `npm` (project uses npm scripts exclusively)
+
+## Environment Variables
+
+1. Copy `.env.example` to `.env`.
+2. Update at least:
+   - `DATABASE_URL` – Postgres connection string.
+   - `TWENTY_BASE_URL`, `TWENTY_API_TOKEN`, `TOOL_TOKEN`, `ATTIO_API_TOKEN`.
+   - Optional: `NOTIFICATION_WEBHOOK_URL`, `LOG_LEVEL`.
+3. Restart `npm run dev` after changing env vars.
+
+## Common Commands
 
 ```bash
+# install deps
+npm install
+
+# start dev server
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+
+# lint + type-check
+npm run lint
+
+# production build
+npm run build
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Prisma & Database
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+# validate schema
+npx prisma validate
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+# push schema to a dev database (DESCTRUCTIVE on existing data)
+npx prisma db push
 
-## Learn More
+# create a named migration against your DB
+npx prisma migrate dev --name <description>
 
-To learn more about Next.js, take a look at the following resources:
+# generate the client (runs automatically during next build)
+npx prisma generate
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+If you do not have a live Postgres instance handy, you can still create SQL
+migrations with:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+npx prisma migrate diff \
+  --from-empty \
+  --to-schema-datamodel prisma/schema.prisma \
+  --script > prisma/migrations/$(date +%Y%m%d)_init/migration.sql
+```
 
-## Deploy on Vercel
+## Project Structure Highlights
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- `src/app` – App Router entrypoints, layouts, and future wizard routes.
+- `src/components/ui` – shadcn/ui primitives generated via `npx shadcn add`.
+- `src/lib/utils.ts` – Tailwind-aware `cn` helper.
+- `prisma/` – Prisma schema + tracked SQL migrations.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Keep `task_logs/` at the repo root updated per task (see root README). All new
+features must run `npm run build` before merging to ensure deploy parity.

@@ -44,6 +44,37 @@ gitignored.
 
 ## Database Schema
 
-We currently integrate directly with Attio’s hosted API and do not maintain a
-local database schema. Once the Next.js app introduces a database layer, we
-will document the full schema here.
+The Next.js app now persists state with PostgreSQL through Prisma. The schema
+file lives at `app/prisma/schema.prisma` and the generated SQL migration is
+checked in at `app/prisma/migrations/20251128_init/migration.sql`. The primary
+tables are:
+
+- `User` – authenticated operators within the UI; owns credentials, selections,
+  and migrations.
+- `Credential` – stores validated tokens/secrets for Twenty, Attio, the internal
+  tool, and optional webhooks, along with validation metadata.
+- `EntitySelection` / `FieldSelection` – capture which CRM entities/fields the
+  user selected (per system) and store samples + metadata for the wizard.
+- `Migration` – the top-level configuration for a migration, including status,
+  ETA, and record estimates.
+- `MigrationRun` / `MigrationLog` – execution attempts and append-only logs for
+  monitoring progress and troubleshooting.
+- `FieldMapping` – the finalized source→target field relationships used when
+  constructing JSON payloads.
+- `WebhookNotification` – queued webhook deliveries for notifying users about
+  migration progress/completion.
+
+### Working with Prisma locally
+
+1. Copy `app/.env.example` to `app/.env` and set `DATABASE_URL` to a Postgres
+   instance you control.
+2. Apply the schema (either `npx prisma db push` for a disposable database or
+   `npx prisma migrate dev --name init` for a managed environment).
+3. Generate the client when the schema changes: `npx prisma generate`.
+4. Keep SQL migrations under `app/prisma/migrations/` in chronological folders.
+   When you lack a database (e.g., CI dry run), you can run  
+   `npx prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma --script > prisma/migrations/<timestamp>_init/migration.sql`
+   to materialize the SQL without connecting to Postgres.
+
+After modifying the schema, update this README so newcomers can reason about the
+data model before touching production.

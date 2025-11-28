@@ -10,6 +10,8 @@ app/.turbo/
 app/.vercel/
 app/coverage/
 app/.env*
+!app/.env.example
+app/src/generated/
 __pycache__/
 *.pyc
 .env
