@@ -38,6 +38,19 @@ export const migrationRouter = router({
     const runs = await listRunsWithLogs(ctx.user.id)
     return runs
   }),
+  notifications: publicProcedure.query(async ({ ctx }) => {
+    const notifications = await ctx.prisma.webhookNotification.findMany({
+      where: {
+        run: {
+          migration: { userId: ctx.user.id },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 10,
+    })
+
+    return notifications
+  }),
 })
 
 

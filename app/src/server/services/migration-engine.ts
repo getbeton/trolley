@@ -1,4 +1,11 @@
-import { LogLevel, MigrationStatus, RunStatus } from "@prisma/client"
+import {
+  CredentialType,
+  LogLevel,
+  MigrationStatus,
+  RunStatus,
+  WebhookEvent,
+  WebhookStatus,
+} from "@prisma/client"
 
 import { prisma } from "../db"
 import { logger } from "../logger"
@@ -107,7 +114,7 @@ export async function executeRun(runId: string, batches = DEFAULT_BATCHES) {
     })
   }
 
-  await prisma.migrationRun.update({
+  const finalizedRun = await prisma.migrationRun.update({
     where: { id: runId },
     data: {
       status: RunStatus.SUCCEEDED,
@@ -115,6 +122,7 @@ export async function executeRun(runId: string, batches = DEFAULT_BATCHES) {
       progress: 100,
       recordsProcessed: run.recordsProcessed,
     },
+    include: { migration: true },
   })
 
   await prisma.migration.update({
@@ -124,6 +132,8 @@ export async function executeRun(runId: string, batches = DEFAULT_BATCHES) {
       lastRunAt: new Date(),
     },
   })
+
+  await deliverWebhookNotification(finalizedRun)
 
   logger.info("Migration run completed", { runId })
 }
@@ -148,6 +158,68 @@ export async function listRunsWithLogs(userId: string) {
   })
 
   return runs
+}
+
+async function deliverWebhookNotification(run: Awaited<ReturnType<typeof prisma.migrationRun.update>>) {
+  const webhook = await prisma.credential.findUnique({
+    where: {
+      userId_type: {
+        userId: run.migration.userId,
+        type: CredentialType.NOTIFICATION_WEBHOOK,
+      },
+    },
+  })
+
+  if (!webhook) {
+    logger.info("No notification webhook configured, skipping delivery")
+    return
+  }
+
+  const notification = await prisma.webhookNotification.create({
+    data: {
+      runId: run.id,
+      event: WebhookEvent.MIGRATION_COMPLETED,
+      status: WebhookStatus.PENDING,
+      targetUrl: webhook.secret,
+      payload: {
+        migration: run.migration.name,
+        runId: run.id,
+        recordsProcessed: run.recordsProcessed,
+        completedAt: run.completedAt,
+      },
+    },
+  })
+
+  try {
+    const response = await fetch(webhook.secret, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(notification.payload),
+    })
+
+    await prisma.webhookNotification.update({
+      where: { id: notification.id },
+      data: {
+        status: response.ok ? WebhookStatus.DELIVERED : WebhookStatus.FAILED,
+        responseStatusCode: response.status,
+        responseBody: await response.text(),
+        deliveredAt: response.ok ? new Date() : null,
+        attemptCount: notification.attemptCount + 1,
+        lastAttemptAt: new Date(),
+      },
+    })
+  } catch (error) {
+    logger.error("Webhook delivery failed", error as Error)
+    await prisma.webhookNotification.update({
+      where: { id: notification.id },
+      data: {
+        status: WebhookStatus.FAILED,
+        responseBody: error instanceof Error ? error.message : "Unknown failure",
+        attemptCount: notification.attemptCount + 1,
+        lastAttemptAt: new Date(),
+      },
+    })
+  }
 }
 
 

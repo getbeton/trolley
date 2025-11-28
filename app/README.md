@@ -77,6 +77,8 @@ npx prisma migrate diff \
   ```bash
   curl http://localhost:3000/api/health
   ```
+- `/api/migrations/run` executes queued migrations with rate-limit aware batches
+  and records webhook delivery attempts for auditability.
 
 ## Project Structure Highlights
 

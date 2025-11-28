@@ -86,3 +86,16 @@ tables are:
 
 After modifying the schema, update this README so newcomers can reason about the
 data model before touching production.
+
+## Migration Engine & Notifications
+
+- `app/src/server/services/migration-engine.ts` simulates a rate-limited
+  migration worker. Runs are enqueued via `tRPC` (`migrations.queueRun`) and
+  executed through the `/api/migrations/run` route which honours the
+  `MIGRATION_RATE_LIMIT_MS` environment variable.
+- Progress, logs, and webhook notifications are stored under the
+  `MigrationRun`, `MigrationLog`, and `WebhookNotification` tables so the UI can
+  stream realtime updates.
+- Configure a webhook endpoint by validating the `NOTIFICATION_WEBHOOK` credential;
+  successful runs automatically fan out a JSON payload and persist the delivery
+  status for auditability.

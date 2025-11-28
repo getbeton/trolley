@@ -117,6 +117,9 @@ export default function MigrationWizardPage() {
     refetchInterval: 4000,
   })
   const queueRun = api.migrations.queueRun.useMutation()
+  const notificationsState = api.migrations.notifications.useQuery(undefined, {
+    refetchInterval: 6000,
+  })
 
   const sourceEntities = api.entities.listTwenty.useQuery(undefined, {
     enabled: false,
@@ -323,6 +326,7 @@ export default function MigrationWizardPage() {
                 mappingState={saveFields}
                 runState={runState}
                 queueRun={queueRun}
+                notificationsState={notificationsState}
               />
             )}
           </CardContent>
@@ -626,6 +630,7 @@ function MappingStep({
   mappingState,
   runState,
   queueRun,
+  notificationsState,
 }: {
   summary: {
     entities: Array<{
@@ -640,6 +645,7 @@ function MappingStep({
   mappingState: ReturnType<typeof api.selections.saveFields.useMutation>
   runState: ReturnType<typeof api.migrations.listRuns.useQuery>
   queueRun: ReturnType<typeof api.migrations.queueRun.useMutation>
+  notificationsState: ReturnType<typeof api.migrations.notifications.useQuery>
 }) {
   const runs = (runState.data ?? []) as Array<{
     id: string
@@ -648,6 +654,13 @@ function MappingStep({
     recordsProcessed: number | null
     migration: { name: string }
     logs: Array<{ message: string | null }>
+  }>
+  const notifications = (notificationsState.data ?? []) as Array<{
+    id: string
+    status: string
+    event: string
+    targetUrl: string
+    createdAt: string
   }>
 
   const [migrationName, setMigrationName] = useState(
@@ -819,6 +832,61 @@ function MappingStep({
                   <TableCell>{run.recordsProcessed ?? 0}</TableCell>
                   <TableCell className="max-w-sm text-xs text-muted-foreground">
                     {run.logs[0]?.message ?? "—"}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </div>
+
+      <div className="rounded-lg border border-border">
+        <div className="flex items-center justify-between border-b border-border px-4 py-2">
+          <p className="text-sm font-semibold text-foreground">Notification deliveries</p>
+          <Badge variant="outline">
+            {notifications.length ? `${notifications.length} recent` : "No attempts yet"}
+          </Badge>
+        </div>
+        {notificationsState.error && (
+          <p className="px-4 py-2 text-xs text-destructive">{notificationsState.error.message}</p>
+        )}
+        {notificationsState.isLoading ? (
+          <div className="flex items-center gap-2 px-4 py-6 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Loading notification history…
+          </div>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Event</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Endpoint</TableHead>
+                <TableHead>Created</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {notifications.map((notification) => (
+                <TableRow key={notification.id}>
+                  <TableCell>{notification.event}</TableCell>
+                  <TableCell>
+                    <Badge
+                      variant={
+                        notification.status === "DELIVERED"
+                          ? "secondary"
+                          : notification.status === "FAILED"
+                            ? "destructive"
+                            : "outline"
+                      }
+                    >
+                      {notification.status.toLowerCase()}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="max-w-xs truncate text-xs text-muted-foreground">
+                    {notification.targetUrl}
+                  </TableCell>
+                  <TableCell className="text-xs text-muted-foreground">
+                    {new Date(notification.createdAt).toLocaleString()}
                   </TableCell>
                 </TableRow>
               ))}
