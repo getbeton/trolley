@@ -70,12 +70,30 @@ export const credentialRouter = router({
           })
           break
         }
+        case CredentialType.NOTIFICATION_WEBHOOK: {
+          const url = new URL(secret)
+          if (!["http:", "https:"].includes(url.protocol)) {
+            throw new Error("Webhook URL must be http(s)")
+          }
+
+          await upsertCredential({
+            userId: user.id,
+            type,
+            secret: url.toString(),
+            status: CredentialStatus.VALID,
+          })
+          break
+        }
         default:
-          throw new Error(`Unhandled credential type ${type satisfies never}`)
+          return assertNever(type)
       }
 
       return { status: "ok" }
     }),
 })
+
+const assertNever = (value: never): never => {
+  throw new Error(`Unhandled credential type: ${value}`)
+}
 
 

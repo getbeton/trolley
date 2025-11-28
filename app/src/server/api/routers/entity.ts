@@ -40,7 +40,7 @@ export const entityRouter = router({
     }),
   sampleTwenty: publicProcedure
     .input(entityNameInput.extend({ limit: z.number().int().min(1).max(25).optional() }))
-    .query(async ({ ctx, input }) => {
+    .mutation(async ({ ctx, input }) => {
       const { user } = ctx
       const baseUrl = await requireCredential(user.id, CredentialType.TWENTY_BASE_URL)
       const token = await requireCredential(user.id, CredentialType.TWENTY_API_TOKEN)
@@ -70,7 +70,7 @@ export const entityRouter = router({
         limit: z.number().int().min(1).max(25).optional(),
       })
     )
-    .query(async ({ ctx, input }) => {
+    .mutation(async ({ ctx, input }) => {
       const { user } = ctx
       const token = await requireCredential(user.id, CredentialType.ATTIO_API_TOKEN)
 

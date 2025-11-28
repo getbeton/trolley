@@ -12,7 +12,7 @@ const entitySelectionInput = z.object({
       label: z.string().optional(),
       includeInSync: z.boolean().default(true),
       availableFieldCount: z.number().int().nonnegative().optional(),
-      sampleRecord: z.record(z.any()).optional(),
+      sampleRecord: z.record(z.string(), z.any()).optional(),
     })
   ),
 })
