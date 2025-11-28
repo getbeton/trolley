@@ -9,8 +9,23 @@ consolidated under `attio-tools/`.
 - `attio-tools/` – Python utilities for Attio (CRM migration, duplicate
   detection, and automated merge scripts). This folder still contains its own
   virtual environment and `.env`-driven configuration.
-- *(future)* `app/` – will contain the new Next.js front-end once we scaffold
-  the COSS stack.
+- `app/` – Next.js 16 + TypeScript application that will host the new COSS stack
+  UI. The project ships with Tailwind CSS 3, the full shadcn/ui component
+  registry (New York style) tuned to a blue accent palette, Prisma, tRPC,
+  TanStack Query, and Jest/Playwright scaffolding will be layered in next.
+
+## Working With The Next.js App
+
+1. `cd app`
+2. Install dependencies: `npm install`
+3. Run the development server: `npm run dev`
+4. Build for production before shipping any change: `npm run build`
+
+The Tailwind tokens (`--primary`, `--accent`, etc.) are already configured to a
+blue hue so all shadcn components inherit the requested theme automatically. If
+you need to regenerate components, run `npx shadcn@latest add <component>` from
+within `app/`. All generated UI lives under `src/components/ui`, with shared
+helpers in `src/lib`.
 
 ## Working With The Attio Toolkit
 
