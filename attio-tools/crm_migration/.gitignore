@@ -1,0 +1,29 @@
+# Ignore environment files with credentials
+.env
+
+# Ignore log files
+logs/
+*.csv
+*.txt
+*.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db

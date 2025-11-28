@@ -1,0 +1,9 @@
+attio-tools/duplicates_report.txt
+attio-tools/crm_migration/logs/
+attio-tools/crm_migration/.env
+attio-tools/crm_migration/venv/
+attio-tools/task_logs/
+__pycache__/
+*.pyc
+.env
+
