@@ -195,6 +195,7 @@ CREATE UNIQUE INDEX "entity_field_unique" ON "FieldSelection"("entitySelectionId
 
 -- CreateIndex
 CREATE INDEX "idx_migration_user_status" ON "Migration"("userId", "status");
+CREATE UNIQUE INDEX "unique_migration_name_per_user" ON "Migration"("userId", "name");
 
 -- CreateIndex
 CREATE INDEX "idx_run_migration_status" ON "MigrationRun"("migrationId", "status");

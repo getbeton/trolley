@@ -113,6 +113,10 @@ export default function MigrationWizardPage() {
   const credentialMutation = api.credentials.validate.useMutation()
   const saveEntities = api.selections.saveEntities.useMutation()
   const saveFields = api.selections.saveFields.useMutation()
+  const runState = api.migrations.listRuns.useQuery(undefined, {
+    refetchInterval: 4000,
+  })
+  const queueRun = api.migrations.queueRun.useMutation()
 
   const sourceEntities = api.entities.listTwenty.useQuery(undefined, {
     enabled: false,
@@ -317,6 +321,8 @@ export default function MigrationWizardPage() {
                 summary={summary}
                 selectionState={selectionSnapshot}
                 mappingState={saveFields}
+                runState={runState}
+                queueRun={queueRun}
               />
             )}
           </CardContent>
@@ -618,6 +624,8 @@ function MappingStep({
   summary,
   selectionState,
   mappingState,
+  runState,
+  queueRun,
 }: {
   summary: {
     entities: Array<{
@@ -630,7 +638,47 @@ function MappingStep({
   }
   selectionState: ReturnType<typeof api.selections.list.useQuery>
   mappingState: ReturnType<typeof api.selections.saveFields.useMutation>
+  runState: ReturnType<typeof api.migrations.listRuns.useQuery>
+  queueRun: ReturnType<typeof api.migrations.queueRun.useMutation>
 }) {
+  const runs = (runState.data ?? []) as Array<{
+    id: string
+    status: string
+    progress: number | null
+    recordsProcessed: number | null
+    migration: { name: string }
+    logs: Array<{ message: string | null }>
+  }>
+
+  const [migrationName, setMigrationName] = useState(
+    `Migration ${new Date().toLocaleDateString()}`
+  )
+  const [description, setDescription] = useState("")
+  const [queueMessage, setQueueMessage] = useState<string | null>(null)
+
+  const handleQueue = async () => {
+    try {
+      const response = await queueRun.mutateAsync({
+        name: migrationName,
+        description,
+        recordEstimate: summary.sourceFieldCount * 100,
+        etaSeconds: summary.entities.length * 5,
+      })
+
+      await fetch(response.executeEndpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ runId: response.runId }),
+      })
+
+      setQueueMessage("Run started! Watch the progress table below.")
+    } catch (error) {
+      setQueueMessage(
+        error instanceof Error ? error.message : "Unable to queue the run. Check the console."
+      )
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div className="rounded-lg border border-border p-4">
@@ -700,6 +748,84 @@ function MappingStep({
           ))}
         </div>
       )}
+
+      <div className="rounded-lg border border-border p-4">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="space-y-1">
+            <p className="text-sm font-semibold text-foreground">Schedule a dry run</p>
+            <p className="text-xs text-muted-foreground">
+              We respect the configured rate limit, log every batch, and return a deterministic ETA.
+            </p>
+          </div>
+          <div className="flex flex-col gap-2 md:flex-row">
+            <Input
+              placeholder="Migration name"
+              value={migrationName}
+              onChange={(event) => setMigrationName(event.target.value)}
+            />
+            <Button onClick={handleQueue} disabled={queueRun.isPending}>
+              {queueRun.isPending ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Queueing…
+                </>
+              ) : (
+                "Queue dry run"
+              )}
+            </Button>
+          </div>
+        </div>
+        <Textarea
+          className="mt-3"
+          placeholder="Optional notes for the migration log…"
+          value={description}
+          onChange={(event) => setDescription(event.target.value)}
+        />
+        {queueMessage && <p className="mt-2 text-xs text-muted-foreground">{queueMessage}</p>}
+      </div>
+
+      <div className="rounded-lg border border-border">
+        <div className="flex items-center justify-between border-b border-border px-4 py-2">
+          <p className="text-sm font-semibold text-foreground">Recent runs</p>
+          <Badge variant="outline">{runs.length ? `${runs.length} recorded` : "No runs yet"}</Badge>
+        </div>
+        {runState.error && (
+          <p className="px-4 py-2 text-xs text-destructive">{runState.error.message}</p>
+        )}
+        {runState.isLoading ? (
+          <div className="flex items-center gap-2 px-4 py-6 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Loading run history…
+          </div>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Name</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Progress</TableHead>
+                <TableHead>Records</TableHead>
+                <TableHead>Last log</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {runs.map((run) => (
+                <TableRow key={run.id}>
+                  <TableCell>{run.migration.name}</TableCell>
+                  <TableCell>
+                    <Badge variant="outline">{run.status}</Badge>
+                  </TableCell>
+                  <TableCell>{run.progress ?? 0}%</TableCell>
+                  <TableCell>{run.recordsProcessed ?? 0}</TableCell>
+                  <TableCell className="max-w-sm text-xs text-muted-foreground">
+                    {run.logs[0]?.message ?? "—"}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </div>
     </div>
   )
 }

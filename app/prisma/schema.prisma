@@ -109,6 +109,7 @@ model Migration {
   fieldMappings    FieldMapping[]
 
   @@index([userId, status], name: "idx_migration_user_status")
+  @@unique([userId, name], map: "unique_migration_name_per_user")
 }
 
 /// Each execution attempt as we move records between CRMs.
