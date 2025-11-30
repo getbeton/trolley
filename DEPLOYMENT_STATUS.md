@@ -18,7 +18,7 @@
 
 **Production URL (Vercel):**
 ```
-https://beton-trolley-10tr45hiz-getbeton.vercel.app
+https://beton-trolley-gof7r7gq1-getbeton.vercel.app
 ```
 
 **Custom Domain (Configured):**
@@ -27,12 +27,12 @@ trolley.getbeton.ai
 ```
 
 **Deployment Status:** ● Ready
-**Build Time:** 43 seconds
+**Build Time:** 3 seconds
 **Environment:** Production
 
 **Inspection URL:**
 ```
-https://vercel.com/getbeton/beton-trolley/8biFrZfMm4DfUDdGVzPeG7vdWZxa
+https://vercel.com/getbeton/beton-trolley/AZKfMgM3TMggiAnEBWkEVbn6BAsh
 ```
 
 ---
@@ -189,10 +189,10 @@ curl https://trolley.getbeton.ai/api/health
 
 ### Deployment
 
-- **Production URL**: https://beton-trolley-10tr45hiz-getbeton.vercel.app
+- **Production URL**: https://beton-trolley-gof7r7gq1-getbeton.vercel.app
 - **Custom Domain**: https://trolley.getbeton.ai (pending DNS)
 - **Vercel Dashboard**: https://vercel.com/getbeton/beton-trolley
-- **Deployment Logs**: https://vercel.com/getbeton/beton-trolley/8biFrZfMm4DfUDdGVzPeG7vdWZxa
+- **Deployment Logs**: https://vercel.com/getbeton/beton-trolley/AZKfMgM3TMggiAnEBWkEVbn6BAsh
 
 ### Supabase
 
@@ -304,7 +304,7 @@ Your deployment is successful when:
 ---
 
 **Deployment by:** Claude Code
-**Commit:** 6431323
+**Commit:** 32cd014
 **Branch:** master
 **Status:** ✅ Ready for DNS & OAuth configuration
 
