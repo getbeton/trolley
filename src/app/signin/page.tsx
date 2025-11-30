@@ -28,15 +28,6 @@ function SignInContent() {
     }
   }, [returnURL])
 
-  const encodeStatePayload = (payload: Record<string, string>) => {
-    try {
-      return btoa(JSON.stringify(payload))
-    } catch (err) {
-      console.error("[signin] Failed to encode state payload", err)
-      return null
-    }
-  }
-
   const handleOAuth = async (provider: "google" | "github") => {
     try {
       setLoading(provider)
@@ -53,13 +44,11 @@ function SignInContent() {
       const callbackWithReturn = isValidReturn
         ? `${callbackURL}?return=${encodeURIComponent(returnURL!)}`
         : callbackURL
-      const statePayload = encodeStatePayload({ returnTo: resolvedReturn })
 
       const { error } = await supabaseAuth.auth.signInWithOAuth({
         provider,
         options: {
           redirectTo: callbackWithReturn,
-          queryParams: statePayload ? { state: statePayload } : undefined,
         },
       })
 
