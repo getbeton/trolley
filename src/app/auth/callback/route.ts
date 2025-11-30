@@ -8,8 +8,9 @@ export async function GET(request: Request) {
   const returnParam = requestUrl.searchParams.get("return")
   const origin = requestUrl.origin
 
-  // Default redirect (legacy behavior for relative paths)
-  let redirectURL = `${origin}/`
+  // Default redirect: trolley domain (Supabase strips query params from OAuth redirectTo)
+  // If callback is on auth domain without return param, redirect to trolley
+  let redirectURL = "https://trolley.getbeton.ai/"
 
   // If return URL provided (new centralized auth flow), validate and use it
   if (returnParam) {
@@ -22,6 +23,9 @@ export async function GET(request: Request) {
         `${origin}/signin?error=${encodeURIComponent("Invalid return URL")}`
       )
     }
+  } else if (origin.includes("trolley.getbeton.ai")) {
+    // If callback is on trolley domain without return param, stay on trolley
+    redirectURL = `${origin}/`
   }
 
   if (code) {
