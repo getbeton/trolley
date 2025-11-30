@@ -1,4 +1,4 @@
-import { CredentialStatus, CredentialType } from "@prisma/client"
+import { Database } from "../../../lib/supabase/types"
 import { z } from "zod"
 
 import { router, publicProcedure } from "../trpc"
@@ -7,8 +7,17 @@ import { validateTwentyToken } from "../../services/twenty"
 import { validateAttioToken } from "../../services/attio"
 import { validateToolToken } from "../../services/tool"
 
+// Create Zod enum from Supabase enum type
+const CredentialTypeEnum = z.enum([
+  "TWENTY_BASE_URL",
+  "TWENTY_API_TOKEN",
+  "TOOL_TOKEN",
+  "ATTIO_API_TOKEN",
+  "NOTIFICATION_WEBHOOK",
+])
+
 const credentialInput = z.object({
-  type: z.nativeEnum(CredentialType),
+  type: CredentialTypeEnum,
   secret: z.string().min(1),
   baseUrl: z.string().url().optional(),
 })
@@ -21,7 +30,7 @@ export const credentialRouter = router({
       const { type, secret, baseUrl } = input
 
       switch (type) {
-        case CredentialType.TWENTY_BASE_URL: {
+        case "TWENTY_BASE_URL": {
           if (!baseUrl) {
             throw new Error("Base URL is required for Twenty")
           }
@@ -30,11 +39,11 @@ export const credentialRouter = router({
             userId: user.id,
             type,
             secret: baseUrl,
-            status: CredentialStatus.VALID,
+            status: "VALID",
           })
           break
         }
-        case CredentialType.TWENTY_API_TOKEN: {
+        case "TWENTY_API_TOKEN": {
           if (!baseUrl) {
             throw new Error("Base URL is required to validate the Twenty token")
           }
@@ -44,33 +53,33 @@ export const credentialRouter = router({
             userId: user.id,
             type,
             secret,
-            status: CredentialStatus.VALID,
-            metadata: { baseUrl },
+            status: "VALID",
+            metadata: { baseUrl } as any,
           })
           break
         }
-        case CredentialType.TOOL_TOKEN: {
+        case "TOOL_TOKEN": {
           const result = await validateToolToken(secret)
           await upsertCredential({
             userId: user.id,
             type,
             secret,
-            status: CredentialStatus.VALID,
-            metadata: result,
+            status: "VALID",
+            metadata: result as any,
           })
           break
         }
-        case CredentialType.ATTIO_API_TOKEN: {
+        case "ATTIO_API_TOKEN": {
           await validateAttioToken(secret)
           await upsertCredential({
             userId: user.id,
             type,
             secret,
-            status: CredentialStatus.VALID,
+            status: "VALID",
           })
           break
         }
-        case CredentialType.NOTIFICATION_WEBHOOK: {
+        case "NOTIFICATION_WEBHOOK": {
           const url = new URL(secret)
           if (!["http:", "https:"].includes(url.protocol)) {
             throw new Error("Webhook URL must be http(s)")
@@ -80,7 +89,7 @@ export const credentialRouter = router({
             userId: user.id,
             type,
             secret: url.toString(),
-            status: CredentialStatus.VALID,
+            status: "VALID",
           })
           break
         }
@@ -95,5 +104,3 @@ export const credentialRouter = router({
 const assertNever = (value: never): never => {
   throw new Error(`Unhandled credential type: ${value}`)
 }
-
-

@@ -1,4 +1,4 @@
-import { prisma } from "../db"
+import { createAdminClient } from "../../lib/supabase/server"
 import { logger } from "../logger"
 
 const DEMO_USER_EMAIL = "demo@betontrolley.local"
@@ -10,18 +10,35 @@ const DEMO_USER_EMAIL = "demo@betontrolley.local"
 export async function getOrCreateDemoUser() {
   logger.info("Ensuring demo user exists", { email: DEMO_USER_EMAIL })
 
-  const user = await prisma.user.upsert({
-    where: { email: DEMO_USER_EMAIL },
-    create: {
+  const supabase = createAdminClient()
+
+  // Check if user exists
+  const { data: existingUser } = await supabase
+    .from("User")
+    .select("*")
+    .eq("email", DEMO_USER_EMAIL)
+    .maybeSingle()
+
+  if (existingUser) {
+    return existingUser
+  }
+
+  // Create new user
+  const { data: user, error } = await supabase
+    .from("User")
+    .insert({
       email: DEMO_USER_EMAIL,
       displayName: "Beton Demo",
       organization: "Beton Trolley",
-    },
-    update: {},
-  })
+    })
+    .select()
+    .single()
 
+  if (error) throw error
   return user
 }
+
+
 
 
 

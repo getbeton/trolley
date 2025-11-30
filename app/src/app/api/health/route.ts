@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 
-import { prisma } from "@/server/db"
+import { createAdminClient } from "@/lib/supabase/server"
 import { logger } from "@/server/logger"
 
 export async function GET() {
@@ -10,7 +10,13 @@ export async function GET() {
   let userCount = 0
 
   try {
-    userCount = await prisma.user.count()
+    const supabase = createAdminClient()
+    const { count, error } = await supabase
+      .from("User")
+      .select("*", { count: "exact", head: true })
+
+    if (error) throw error
+    userCount = count ?? 0
   } catch (error) {
     database = "error"
     logger.error("Health check database probe failed", error as Error)

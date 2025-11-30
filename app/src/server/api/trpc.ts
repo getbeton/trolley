@@ -1,16 +1,27 @@
 import { initTRPC } from "@trpc/server"
 import superjson from "superjson"
 
-import { prisma } from "../db"
-import { getOrCreateDemoUser } from "../auth/user"
+import { createClient } from "../../lib/supabase/server"
+import { getCurrentUser, ensureDevUser } from "../../lib/supabase/auth-helpers"
 import { logger } from "../logger"
 
 export const createContext = async () => {
-  const user = await getOrCreateDemoUser()
+  // Ensure dev user exists in dev mode
+  await ensureDevUser()
+
+  const user = await getCurrentUser()
+
+  if (!user) {
+    logger.warn("No user context available")
+    throw new Error("Unauthorized: Please sign in to continue")
+  }
+
   logger.debug("Resolved request context", { userId: user.id })
 
+  const supabase = await createClient()
+
   return {
-    prisma,
+    supabase,
     user,
   }
 }
@@ -22,6 +33,8 @@ const t = initTRPC.context<Context>().create({
 
 export const router = t.router
 export const publicProcedure = t.procedure
+
+
 
 
 

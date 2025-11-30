@@ -1,7 +1,9 @@
-import { CredentialType } from "@prisma/client"
 import { z } from "zod"
+import { Database } from "../../../lib/supabase/types"
 
 import { router, publicProcedure } from "../trpc"
+
+type CredentialType = Database["public"]["Enums"]["CredentialType"]
 import { requireCredential } from "../../services/credentials"
 import {
   listTwentyEntities,
@@ -22,8 +24,8 @@ const entityNameInput = z.object({
 export const entityRouter = router({
   listTwenty: publicProcedure.query(async ({ ctx }) => {
     const { user } = ctx
-    const baseUrl = await requireCredential(user.id, CredentialType.TWENTY_BASE_URL)
-    const token = await requireCredential(user.id, CredentialType.TWENTY_API_TOKEN)
+    const baseUrl = await requireCredential(user.id, "TWENTY_BASE_URL")
+    const token = await requireCredential(user.id, "TWENTY_API_TOKEN")
 
     const entities = await listTwentyEntities(baseUrl.secret, token.secret)
     logger.info("Fetched Twenty entities", { count: entities.length })
@@ -33,8 +35,8 @@ export const entityRouter = router({
     .input(entityNameInput)
     .query(async ({ ctx, input }) => {
       const { user } = ctx
-      const baseUrl = await requireCredential(user.id, CredentialType.TWENTY_BASE_URL)
-      const token = await requireCredential(user.id, CredentialType.TWENTY_API_TOKEN)
+      const baseUrl = await requireCredential(user.id, "TWENTY_BASE_URL")
+      const token = await requireCredential(user.id, "TWENTY_API_TOKEN")
 
       return listTwentyFields(baseUrl.secret, token.secret, input.entityName)
     }),
@@ -42,14 +44,14 @@ export const entityRouter = router({
     .input(entityNameInput.extend({ limit: z.number().int().min(1).max(25).optional() }))
     .mutation(async ({ ctx, input }) => {
       const { user } = ctx
-      const baseUrl = await requireCredential(user.id, CredentialType.TWENTY_BASE_URL)
-      const token = await requireCredential(user.id, CredentialType.TWENTY_API_TOKEN)
+      const baseUrl = await requireCredential(user.id, "TWENTY_BASE_URL")
+      const token = await requireCredential(user.id, "TWENTY_API_TOKEN")
 
       return sampleTwentyRecords(baseUrl.secret, token.secret, input.entityName, input.limit)
     }),
   listAttio: publicProcedure.query(async ({ ctx }) => {
     const { user } = ctx
-    const token = await requireCredential(user.id, CredentialType.ATTIO_API_TOKEN)
+    const token = await requireCredential(user.id, "ATTIO_API_TOKEN")
 
     const objects = await listAttioObjects(token.secret)
     logger.info("Fetched Attio objects", { count: objects.length })
@@ -59,7 +61,7 @@ export const entityRouter = router({
     .input(z.object({ objectName: z.string().min(1) }))
     .query(async ({ ctx, input }) => {
       const { user } = ctx
-      const token = await requireCredential(user.id, CredentialType.ATTIO_API_TOKEN)
+      const token = await requireCredential(user.id, "ATTIO_API_TOKEN")
 
       return listAttioFields(token.secret, input.objectName)
     }),
@@ -72,7 +74,7 @@ export const entityRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       const { user } = ctx
-      const token = await requireCredential(user.id, CredentialType.ATTIO_API_TOKEN)
+      const token = await requireCredential(user.id, "ATTIO_API_TOKEN")
 
       return sampleAttioRecords(token.secret, input.objectName, input.limit)
     }),

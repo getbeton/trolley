@@ -1,18 +1,17 @@
-import {
-  CredentialStatus,
-  CredentialType,
-  Prisma,
-} from "@prisma/client"
-
-import { prisma } from "../db"
+import { Database } from "../../lib/supabase/types"
+import { createAdminClient } from "../../lib/supabase/server"
 import { logger } from "../logger"
+
+type CredentialStatus = Database["public"]["Enums"]["CredentialStatus"]
+type CredentialType = Database["public"]["Enums"]["CredentialType"]
+type Json = Database["public"]["Tables"]["Credential"]["Row"]["metadata"]
 
 export interface UpsertCredentialInput {
   userId: string
   type: CredentialType
   secret: string
   status: CredentialStatus
-  metadata?: Prisma.InputJsonValue
+  metadata?: Json
   validationMessage?: string | null
 }
 
@@ -22,30 +21,53 @@ export interface UpsertCredentialInput {
 export async function upsertCredential(input: UpsertCredentialInput) {
   logger.info("Persisting credential", { type: input.type, userId: input.userId })
 
-  return prisma.credential.upsert({
-    where: {
-      userId_type: {
+  const supabase = createAdminClient()
+
+  // Check if credential exists
+  const { data: existing } = await supabase
+    .from("Credential")
+    .select("id")
+    .eq("userId", input.userId)
+    .eq("type", input.type)
+    .maybeSingle()
+
+  const credentialData = {
+    secret: input.secret,
+    status: input.status,
+    metadata: input.metadata,
+    validationMessage: input.validationMessage,
+    lastValidatedAt: new Date().toISOString(),
+  }
+
+  if (existing) {
+    // Update existing credential
+    const { data, error } = await supabase
+      .from("Credential")
+      .update({
+        ...credentialData,
+        updatedAt: new Date().toISOString(),
+      })
+      .eq("id", existing.id)
+      .select()
+      .single()
+
+    if (error) throw error
+    return data
+  } else {
+    // Create new credential
+    const { data, error } = await supabase
+      .from("Credential")
+      .insert({
         userId: input.userId,
         type: input.type,
-      },
-    },
-    update: {
-      secret: input.secret,
-      status: input.status,
-      metadata: input.metadata,
-      validationMessage: input.validationMessage,
-      lastValidatedAt: new Date(),
-    },
-    create: {
-      userId: input.userId,
-      type: input.type,
-      secret: input.secret,
-      status: input.status,
-      metadata: input.metadata,
-      validationMessage: input.validationMessage,
-      lastValidatedAt: new Date(),
-    },
-  })
+        ...credentialData,
+      })
+      .select()
+      .single()
+
+    if (error) throw error
+    return data
+  }
 }
 
 /**
@@ -54,14 +76,17 @@ export async function upsertCredential(input: UpsertCredentialInput) {
 export async function getCredential(userId: string, type: CredentialType) {
   logger.debug("Fetching credential", { type, userId })
 
-  return prisma.credential.findUnique({
-    where: {
-      userId_type: {
-        userId,
-        type,
-      },
-    },
-  })
+  const supabase = createAdminClient()
+
+  const { data, error } = await supabase
+    .from("Credential")
+    .select("*")
+    .eq("userId", userId)
+    .eq("type", type)
+    .maybeSingle()
+
+  if (error) throw error
+  return data
 }
 
 /**
@@ -70,12 +95,14 @@ export async function getCredential(userId: string, type: CredentialType) {
 export async function requireCredential(userId: string, type: CredentialType) {
   const credential = await getCredential(userId, type)
 
-  if (!credential || credential.status !== CredentialStatus.VALID) {
+  if (!credential || credential.status !== ("VALID" as CredentialStatus)) {
     throw new Error(`Credential ${type} is missing or invalid`)
   }
 
   return credential
 }
+
+
 
 
 

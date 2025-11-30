@@ -1,11 +1,21 @@
-import { CrmSystem, SelectionStatus } from "@prisma/client"
 import { z } from "zod"
+import { Database } from "../../../lib/supabase/types"
 
 import { router, publicProcedure } from "../trpc"
 import { logger } from "../../logger"
 
+type CrmSystem = Database["public"]["Enums"]["CrmSystem"]
+type SelectionStatus = Database["public"]["Enums"]["SelectionStatus"]
+
+// Create enum object for zod validation
+const CrmSystemEnum = {
+  TWENTY: "TWENTY" as const,
+  ATTIO: "ATTIO" as const,
+  INTERNAL: "INTERNAL" as const,
+}
+
 const entitySelectionInput = z.object({
-  system: z.nativeEnum(CrmSystem),
+  system: z.enum(["TWENTY", "ATTIO", "INTERNAL"]),
   entities: z.array(
     z.object({
       name: z.string().min(1),
@@ -35,7 +45,7 @@ export const selectionRouter = router({
   saveEntities: publicProcedure
     .input(entitySelectionInput)
     .mutation(async ({ ctx, input }) => {
-      const { prisma, user } = ctx
+      const { supabase, user } = ctx
       const { entities, system } = input
 
       logger.info("Persisting entity selections", {
@@ -43,45 +53,63 @@ export const selectionRouter = router({
         system,
       })
 
-      const operations = entities.map((entity) =>
-        prisma.entitySelection.upsert({
-          where: {
-            userId_system_entityName: {
+      // Process each entity upsert
+      for (const entity of entities) {
+        const status = (entity.includeInSync ? "READY" : "PENDING") as SelectionStatus
+
+        // Check if exists
+        const { data: existing } = await supabase
+          .from("EntitySelection")
+          .select("id")
+          .eq("userId", user.id)
+          .eq("system", system as CrmSystem)
+          .eq("entityName", entity.name)
+          .maybeSingle()
+
+        if (existing) {
+          // Update
+          await supabase
+            .from("EntitySelection")
+            .update({
+              entityLabel: entity.label,
+              includeInSync: entity.includeInSync,
+              availableFieldCount: entity.availableFieldCount,
+              sampleRecord: entity.sampleRecord,
+              status,
+              updatedAt: new Date().toISOString(),
+            })
+            .eq("id", existing.id)
+        } else {
+          // Insert
+          await supabase
+            .from("EntitySelection")
+            .insert({
               userId: user.id,
-              system,
+              system: system as CrmSystem,
               entityName: entity.name,
-            },
-          },
-          update: {
-            entityLabel: entity.label,
-            includeInSync: entity.includeInSync,
-            availableFieldCount: entity.availableFieldCount,
-            sampleRecord: entity.sampleRecord,
-            status: entity.includeInSync ? SelectionStatus.READY : SelectionStatus.PENDING,
-          },
-          create: {
-            userId: user.id,
-            system,
-            entityName: entity.name,
-            entityLabel: entity.label,
-            includeInSync: entity.includeInSync,
-            availableFieldCount: entity.availableFieldCount,
-            sampleRecord: entity.sampleRecord,
-            status: entity.includeInSync ? SelectionStatus.READY : SelectionStatus.PENDING,
-          },
-        })
-      )
+              entityLabel: entity.label,
+              includeInSync: entity.includeInSync,
+              availableFieldCount: entity.availableFieldCount,
+              sampleRecord: entity.sampleRecord,
+              status,
+            })
+        }
+      }
 
-      await prisma.$transaction(operations)
+      // Return all entities for this system
+      const { data: selections, error } = await supabase
+        .from("EntitySelection")
+        .select("*")
+        .eq("userId", user.id)
+        .eq("system", system as CrmSystem)
 
-      return prisma.entitySelection.findMany({
-        where: { userId: user.id, system },
-      })
+      if (error) throw error
+      return selections
     }),
   saveFields: publicProcedure
     .input(fieldSelectionInput)
     .mutation(async ({ ctx, input }) => {
-      const { prisma, user } = ctx
+      const { supabase, user } = ctx
       const { entityId, fields } = input
 
       logger.info("Persisting field selections", {
@@ -89,54 +117,75 @@ export const selectionRouter = router({
         count: fields.length,
       })
 
-      const operations = fields.map((field) =>
-        prisma.fieldSelection.upsert({
-          where: {
-            entitySelectionId_fieldName: {
+      // Process each field upsert
+      for (const field of fields) {
+        // Check if exists
+        const { data: existing } = await supabase
+          .from("FieldSelection")
+          .select("id")
+          .eq("entitySelectionId", entityId)
+          .eq("fieldName", field.name)
+          .maybeSingle()
+
+        if (existing) {
+          // Update
+          await supabase
+            .from("FieldSelection")
+            .update({
+              fieldLabel: field.label,
+              fieldType: field.type,
+              isRequired: field.required ?? false,
+              isSelected: field.isSelected,
+              sampleValue: field.sampleValue,
+              updatedAt: new Date().toISOString(),
+            })
+            .eq("id", existing.id)
+        } else {
+          // Insert
+          await supabase
+            .from("FieldSelection")
+            .insert({
               entitySelectionId: entityId,
+              userId: user.id,
               fieldName: field.name,
-            },
-          },
-          update: {
-            fieldLabel: field.label,
-            fieldType: field.type,
-            isRequired: field.required ?? false,
-            isSelected: field.isSelected,
-            sampleValue: field.sampleValue,
-          },
-          create: {
-            entitySelectionId: entityId,
-            userId: user.id,
-            fieldName: field.name,
-            fieldLabel: field.label,
-            fieldType: field.type,
-            isRequired: field.required ?? false,
-            isSelected: field.isSelected,
-            sampleValue: field.sampleValue,
-          },
-        })
-      )
+              fieldLabel: field.label,
+              fieldType: field.type,
+              isRequired: field.required ?? false,
+              isSelected: field.isSelected,
+              sampleValue: field.sampleValue,
+            })
+        }
+      }
 
-      await prisma.$transaction(operations)
+      // Return all fields for this entity
+      const { data: fieldSelections, error } = await supabase
+        .from("FieldSelection")
+        .select("*")
+        .eq("entitySelectionId", entityId)
 
-      return prisma.fieldSelection.findMany({
-        where: { entitySelectionId: entityId },
-      })
+      if (error) throw error
+      return fieldSelections
     }),
   list: publicProcedure
-    .input(z.object({ system: z.nativeEnum(CrmSystem).optional() }).optional())
+    .input(z.object({ system: z.enum(["TWENTY", "ATTIO", "INTERNAL"]).optional() }).optional())
     .query(async ({ ctx, input }) => {
-      const { prisma, user } = ctx
-      const selections = await prisma.entitySelection.findMany({
-        where: {
-          userId: user.id,
-          system: input?.system,
-        },
-        include: { fields: true },
-        orderBy: { updatedAt: "desc" },
-      })
+      const { supabase, user } = ctx
 
-      logger.info("Loaded entity selections", { count: selections.length })
+      let query = supabase
+        .from("EntitySelection")
+        .select("*, fields:FieldSelection(*)")
+        .eq("userId", user.id)
+        .order("updatedAt", { ascending: false })
+
+      if (input?.system) {
+        query = query.eq("system", input.system as CrmSystem)
+      }
+
+      const { data: selections, error } = await query
+
+      if (error) throw error
+
+      logger.info("Loaded entity selections", { count: selections?.length ?? 0 })
       return selections
     }),
 })

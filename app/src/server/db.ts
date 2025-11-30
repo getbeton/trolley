@@ -1,21 +1,17 @@
-import { PrismaClient } from "@prisma/client"
+/**
+ * Database client exports
+ * Using Supabase for all database operations
+ */
 
+import { createClient, createAdminClient } from "../lib/supabase/server"
 import { logger } from "./logger"
 
-declare global {
-  var __prisma: PrismaClient | undefined
-}
+// Export Supabase client creators
+export { createClient as createSupabaseClient, createAdminClient as createSupabaseAdminClient }
 
-// Share a single Prisma client instance across hot reloads.
-export const prisma =
-  globalThis.__prisma ??
-  new PrismaClient({
-    log: ["warn", "error"],
-  })
+// For backward compatibility during migration, export createClient as default
+export const getSupabaseClient = createClient
 
-if (!globalThis.__prisma) {
-  logger.info("Bootstrapping Prisma client")
-  globalThis.__prisma = prisma
-}
+logger.info("Using Supabase client for database operations")
 
 
