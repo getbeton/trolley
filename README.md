@@ -86,6 +86,7 @@ npm run dev
 
 ## Tech Stack
 
+- **Centralized Auth Flow** (Supabase + Next.js middleware with encoded return state)
 - **Next.js 16** + TypeScript
 - **Tailwind CSS** + shadcn/ui components
 - **tRPC** for type-safe APIs
@@ -119,6 +120,8 @@ https://hooks.slack.com/services/YOUR/WEBHOOK/URL
 ---
 
 ## Environment Variables
+- `NEXT_PUBLIC_SUPABASE_AUTH_URL` – Shared auth project URL (points to beton-auth)
+- `NEXT_PUBLIC_SUPABASE_AUTH_ANON_KEY` – Shared anon key for auth project
 
 ### Required (if using Supabase)
 - `NEXT_PUBLIC_SUPABASE_URL` – Your Supabase project URL
@@ -167,6 +170,15 @@ Test your webhooks with the included utilities:
 node test-webhook-receiver.js    # Start local receiver
 node test-webhook.js YOUR_URL    # Send test notification
 ```
+
+## Authentication Flow (Production)
+
+1. Visitors hit `https://trolley.getbeton.ai` (or any other allowed app domain). The Next.js middleware checks the Supabase session using the shared beton-auth project. If there is no session, the middleware redirects the user to `/signin` **on the same host** while preserving the original destination in a `return` query parameter.
+2. The `/signin` page calls `supabase.auth.signInWithOAuth()` and encodes the desired return URL inside the OAuth `state` parameter. The callback URL always points to `/auth/callback` on the originating domain.
+3. Supabase completes the OAuth handshake and redirects the browser back to `/auth/callback`. That route exchanges the authorization code for a session, validates the decoded `state.returnTo` URL against the whitelist in `src/lib/utils/domain.ts`, and then redirects the user back to their original page (defaulting to `/` on trolley).
+4. Because middleware sets Supabase cookies on the `.getbeton.ai` parent domain in production, the session is immediately available to all Beton subdomains that host this app. There is no separate auth service to keep in sync—both `auth.getbeton.ai` and `trolley.getbeton.ai` serve the same Next.js deployment (see `vercel.json`), so maintenance is centralized.
+
+This design eliminates brittle redirect cookies and still keeps the door open for additional Beton apps (e.g., `enrichment.getbeton.ai`) by simply adding their hostnames to `ALLOWED_RETURN_DOMAINS`.
 
 ---
 

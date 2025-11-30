@@ -1,15 +1,11 @@
 import { createServerClient } from "@supabase/ssr"
 import { NextResponse, type NextRequest } from "next/server"
-import { isAuthDomain } from "./lib/utils/domain"
+import { validateReturnURL } from "./lib/utils/domain"
 
 export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
     request,
   })
-
-  // Detect which domain we're on
-  const hostname = request.headers.get("host") || ""
-  const isAuth = isAuthDomain(hostname)
 
   // Skip auth in development mode
   if (process.env.NODE_ENV === "development" || process.env.NODE_ENV === "test") {
@@ -56,30 +52,20 @@ export async function middleware(request: NextRequest) {
     request.nextUrl.pathname.startsWith(path)
   )
 
-  // If on auth domain, allow access to sign-in page
-  if (isAuth && request.nextUrl.pathname === "/signin") {
-    return supabaseResponse
-  }
-
-  // If not authenticated and not on public path
+  // If not authenticated and not on public path, send to local signin
   if (!user && !isPublicPath) {
-    // If on trolley domain (or other app domains), redirect to auth domain
-    if (!isAuth) {
-      // Don't manually encode - URLSearchParams.set() will handle encoding
-      const authURL = new URL("https://auth.getbeton.ai/signin")
-      authURL.searchParams.set("return", request.url)
-      return NextResponse.redirect(authURL)
-    }
-
-    // If on auth domain and trying to access non-signin page, redirect to signin
-    if (isAuth && request.nextUrl.pathname !== "/signin") {
-      return NextResponse.redirect(new URL("/signin", request.url))
-    }
+    const signinURL = new URL("/signin", request.url)
+    signinURL.searchParams.set("return", request.url)
+    return NextResponse.redirect(signinURL)
   }
 
-  // If on auth domain and authenticated at /signin, redirect to trolley
-  if (isAuth && user && request.nextUrl.pathname === "/signin") {
-    return NextResponse.redirect("https://trolley.getbeton.ai")
+  // Authenticated users visiting /signin should be bounced back to their target
+  if (user && request.nextUrl.pathname === "/signin") {
+    const requestedReturn = request.nextUrl.searchParams.get("return")
+    if (requestedReturn && validateReturnURL(requestedReturn)) {
+      return NextResponse.redirect(requestedReturn)
+    }
+    return NextResponse.redirect(new URL("/", request.url))
   }
 
   return supabaseResponse

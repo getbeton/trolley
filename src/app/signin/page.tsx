@@ -28,23 +28,12 @@ function SignInContent() {
     }
   }, [returnURL])
 
-  const setReturnCookie = (targetURL: string) => {
+  const encodeStatePayload = (payload: Record<string, string>) => {
     try {
-      const cookiePieces = [
-        `beton_return=${encodeURIComponent(targetURL)}`,
-        "path=/",
-        "max-age=300",
-        "SameSite=Lax",
-      ]
-
-      if (typeof window !== "undefined" && window.location.hostname.endsWith("getbeton.ai")) {
-        cookiePieces.push("domain=.getbeton.ai", "Secure")
-      }
-
-      document.cookie = cookiePieces.join("; ")
-      console.info("[signin] beton_return cookie set")
+      return btoa(JSON.stringify(payload))
     } catch (err) {
-      console.error("[signin] Failed to set beton_return cookie", err)
+      console.error("[signin] Failed to encode state payload", err)
+      return null
     }
   }
 
@@ -59,18 +48,18 @@ function SignInContent() {
       const isValidReturn = returnURL ? validateReturnURL(returnURL) : false
 
       const resolvedReturn = isValidReturn ? returnURL! : defaultReturn
-      setReturnCookie(resolvedReturn)
-
       const returnDomain = new URL(resolvedReturn).origin
       const callbackURL = `${returnDomain}/auth/callback`
       const callbackWithReturn = isValidReturn
         ? `${callbackURL}?return=${encodeURIComponent(returnURL!)}`
         : callbackURL
+      const statePayload = encodeStatePayload({ returnTo: resolvedReturn })
 
       const { error } = await supabaseAuth.auth.signInWithOAuth({
         provider,
         options: {
           redirectTo: callbackWithReturn,
+          queryParams: statePayload ? { state: statePayload } : undefined,
         },
       })
 
