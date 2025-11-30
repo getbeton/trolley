@@ -3,5 +3,9 @@
   "outputDirectory": ".next",
   "installCommand": "npm install",
   "framework": "nextjs",
-  "regions": ["iad1"]
+  "regions": ["iad1"],
+  "alias": [
+    "trolley.getbeton.ai",
+    "auth.getbeton.ai"
+  ]
 }

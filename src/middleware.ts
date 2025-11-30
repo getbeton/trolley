@@ -1,10 +1,15 @@
 import { createServerClient } from "@supabase/ssr"
 import { NextResponse, type NextRequest } from "next/server"
+import { isAuthDomain } from "./lib/utils/domain"
 
 export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
     request,
   })
+
+  // Detect which domain we're on
+  const hostname = request.headers.get("host") || ""
+  const isAuth = isAuthDomain(hostname)
 
   // Skip auth in development mode
   if (process.env.NODE_ENV === "development" || process.env.NODE_ENV === "test") {
@@ -46,15 +51,35 @@ export async function middleware(request: NextRequest) {
   } = await supabase.auth.getUser()
 
   // Protect routes - redirect to sign in if not authenticated
-  const publicPaths = ["/auth", "/api/auth"]
+  const publicPaths = ["/auth", "/api/auth", "/signin"]
   const isPublicPath = publicPaths.some((path) =>
     request.nextUrl.pathname.startsWith(path)
   )
 
+  // If on auth domain, allow access to sign-in page
+  if (isAuth && request.nextUrl.pathname === "/signin") {
+    return supabaseResponse
+  }
+
+  // If not authenticated and not on public path
   if (!user && !isPublicPath) {
-    const redirectUrl = new URL("/auth/signin", request.url)
-    redirectUrl.searchParams.set("redirect", request.nextUrl.pathname)
-    return NextResponse.redirect(redirectUrl)
+    // If on trolley domain (or other app domains), redirect to auth domain
+    if (!isAuth) {
+      const returnURL = encodeURIComponent(request.url)
+      const authURL = new URL("https://auth.getbeton.ai/signin")
+      authURL.searchParams.set("return", returnURL)
+      return NextResponse.redirect(authURL)
+    }
+
+    // If on auth domain and trying to access non-signin page, redirect to signin
+    if (isAuth && request.nextUrl.pathname !== "/signin") {
+      return NextResponse.redirect(new URL("/signin", request.url))
+    }
+  }
+
+  // If on auth domain and authenticated at /signin, redirect to trolley
+  if (isAuth && user && request.nextUrl.pathname === "/signin") {
+    return NextResponse.redirect("https://trolley.getbeton.ai")
   }
 
   return supabaseResponse
