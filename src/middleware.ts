@@ -11,24 +11,30 @@ export async function middleware(request: NextRequest) {
     return supabaseResponse
   }
 
+  // Use AUTH client for authentication checks
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    process.env.NEXT_PUBLIC_SUPABASE_AUTH_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_AUTH_ANON_KEY!,
     {
       cookies: {
         getAll() {
           return request.cookies.getAll()
         },
         setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) =>
+          cookiesToSet.forEach(({ name, value, options }) => {
+            // Set cookie domain to parent domain for cross-subdomain auth
+            const cookieOptions = {
+              ...options,
+              domain: process.env.NODE_ENV === "production" ? ".getbeton.ai" : undefined,
+              secure: process.env.NODE_ENV === "production",
+              sameSite: "lax" as const,
+            }
             request.cookies.set(name, value)
-          )
+            supabaseResponse.cookies.set(name, value, cookieOptions)
+          })
           supabaseResponse = NextResponse.next({
             request,
           })
-          cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options)
-          )
         },
       },
     }

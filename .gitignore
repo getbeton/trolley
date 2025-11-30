@@ -10,3 +10,6 @@ __pycache__/
 *.pyc
 
 migration-docs/
+.vercel
+.credentials.txt
+setup-vercel-envs.sh

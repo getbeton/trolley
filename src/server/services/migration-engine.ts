@@ -215,10 +215,10 @@ export async function listRunsWithLogs(userId: string) {
   }
 
   // Sort logs for each run (Supabase doesn't support nested orderBy in a single query)
-  return runs.map((run) => ({
+  return runs.map((run: any) => ({
     ...run,
     logs: (run.logs || [])
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
       .slice(0, 5),
   }))
 }

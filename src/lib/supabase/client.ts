@@ -1,13 +1,7 @@
-import { createBrowserClient } from "@supabase/ssr"
-import type { Database } from "./types"
-
 /**
- * Creates a Supabase client for client-side operations (Client Components)
- * This client maintains the user session through cookies
+ * @deprecated This file is kept for backward compatibility.
+ * Use createDataClient() for data operations or createAuthClient() for auth operations.
+ *
+ * Current behavior: Points to data client (app-specific database queries)
  */
-export function createClient() {
-  return createBrowserClient<Database>(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  )
-}
+export { createDataClient as createClient } from "./data-client"

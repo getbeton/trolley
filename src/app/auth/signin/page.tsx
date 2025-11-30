@@ -1,6 +1,6 @@
 "use client"
 
-import { createClient } from "../../../lib/supabase/client"
+import { createAuthClient } from "../../../lib/supabase/auth-client"
 import { useRouter } from "next/navigation"
 import { useState } from "react"
 import { Button } from "../../../components/ui/button"
@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../..
 
 export default function SignInPage() {
   const router = useRouter()
-  const supabase = createClient()
+  const supabaseAuth = createAuthClient()
   const [loading, setLoading] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -16,7 +16,7 @@ export default function SignInPage() {
     try {
       setLoading("google")
       setError(null)
-      const { error } = await supabase.auth.signInWithOAuth({
+      const { error } = await supabaseAuth.auth.signInWithOAuth({
         provider: "google",
         options: {
           redirectTo: `${window.location.origin}/auth/callback`,
@@ -33,7 +33,7 @@ export default function SignInPage() {
     try {
       setLoading("github")
       setError(null)
-      const { error } = await supabase.auth.signInWithOAuth({
+      const { error } = await supabaseAuth.auth.signInWithOAuth({
         provider: "github",
         options: {
           redirectTo: `${window.location.origin}/auth/callback`,
