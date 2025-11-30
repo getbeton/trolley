@@ -34,6 +34,7 @@ function SignInContent() {
       setError(null)
 
       // Construct callback URL with return parameter
+      // Note: returnURL from searchParams.get() is already decoded by Next.js
       const returnDomain = returnURL
         ? new URL(returnURL).origin
         : "https://trolley.getbeton.ai"

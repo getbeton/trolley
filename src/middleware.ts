@@ -65,9 +65,9 @@ export async function middleware(request: NextRequest) {
   if (!user && !isPublicPath) {
     // If on trolley domain (or other app domains), redirect to auth domain
     if (!isAuth) {
-      const returnURL = encodeURIComponent(request.url)
+      // Don't manually encode - URLSearchParams.set() will handle encoding
       const authURL = new URL("https://auth.getbeton.ai/signin")
-      authURL.searchParams.set("return", returnURL)
+      authURL.searchParams.set("return", request.url)
       return NextResponse.redirect(authURL)
     }
 
