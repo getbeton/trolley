@@ -1,5 +1,6 @@
 export const ALLOWED_RETURN_DOMAINS = [
   "trolley.getbeton.ai",
+  "auth.getbeton.ai",
   "enrichment.getbeton.ai",
   "facade.getbeton.ai",
 ] as const

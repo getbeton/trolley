@@ -178,7 +178,7 @@ node test-webhook.js YOUR_URL    # Send test notification
 3. Supabase completes the OAuth handshake and redirects the browser back to `/auth/callback`. That route exchanges the authorization code for a session, validates the decoded `state.returnTo` URL against the whitelist in `src/lib/utils/domain.ts`, and then redirects the user back to their original page (defaulting to `/` on trolley).
 4. Because middleware sets Supabase cookies on the `.getbeton.ai` parent domain in production, the session is immediately available to all Beton subdomains that host this app. There is no separate auth service to keep in sync—both `auth.getbeton.ai` and `trolley.getbeton.ai` serve the same Next.js deployment (see `vercel.json`), so maintenance is centralized.
 
-This design eliminates brittle redirect cookies and still keeps the door open for additional Beton apps (e.g., `enrichment.getbeton.ai`) by simply adding their hostnames to `ALLOWED_RETURN_DOMAINS`.
+This design eliminates brittle redirect cookies and still keeps the door open for additional Beton apps (e.g., `auth.getbeton.ai`, `enrichment.getbeton.ai`) by simply adding their hostnames to `ALLOWED_RETURN_DOMAINS`.
 
 ---
 
