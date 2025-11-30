@@ -4,6 +4,7 @@ node_modules/
 .turbo/
 .vercel/
 coverage/
+.claude/
 .env*
 !.env.example
 __pycache__/

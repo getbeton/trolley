@@ -28,6 +28,26 @@ function SignInContent() {
     }
   }, [returnURL])
 
+  const setReturnCookie = (targetURL: string) => {
+    try {
+      const cookiePieces = [
+        `beton_return=${encodeURIComponent(targetURL)}`,
+        "path=/",
+        "max-age=300",
+        "SameSite=Lax",
+      ]
+
+      if (typeof window !== "undefined" && window.location.hostname.endsWith("getbeton.ai")) {
+        cookiePieces.push("domain=.getbeton.ai", "Secure")
+      }
+
+      document.cookie = cookiePieces.join("; ")
+      console.info("[signin] beton_return cookie set")
+    } catch (err) {
+      console.error("[signin] Failed to set beton_return cookie", err)
+    }
+  }
+
   const handleOAuth = async (provider: "google" | "github") => {
     try {
       setLoading(provider)
@@ -35,12 +55,16 @@ function SignInContent() {
 
       // Construct callback URL with return parameter
       // Note: returnURL from searchParams.get() is already decoded by Next.js
-      const returnDomain = returnURL
-        ? new URL(returnURL).origin
-        : "https://trolley.getbeton.ai"
+      const defaultReturn = "https://trolley.getbeton.ai"
+      const isValidReturn = returnURL ? validateReturnURL(returnURL) : false
+
+      const resolvedReturn = isValidReturn ? returnURL! : defaultReturn
+      setReturnCookie(resolvedReturn)
+
+      const returnDomain = new URL(resolvedReturn).origin
       const callbackURL = `${returnDomain}/auth/callback`
-      const callbackWithReturn = returnURL
-        ? `${callbackURL}?return=${encodeURIComponent(returnURL)}`
+      const callbackWithReturn = isValidReturn
+        ? `${callbackURL}?return=${encodeURIComponent(returnURL!)}`
         : callbackURL
 
       const { error } = await supabaseAuth.auth.signInWithOAuth({
