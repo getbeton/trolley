@@ -1,17 +1,12 @@
-attio-tools/duplicates_report.txt
-attio-tools/crm_migration/logs/
-attio-tools/crm_migration/.env
-attio-tools/crm_migration/venv/
-attio-tools/task_logs/
 task_logs/
-app/node_modules/
-app/.next/
-app/.turbo/
-app/.vercel/
-app/coverage/
-app/.env*
-!app/.env.example
+node_modules/
+.next/
+.turbo/
+.vercel/
+coverage/
+.env*
+!.env.example
 __pycache__/
 *.pyc
-.env
 
+migration-docs/

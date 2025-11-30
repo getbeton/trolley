@@ -6,7 +6,8 @@
       "Bash(npm run build:*)",
       "Bash(npm install:*)",
       "Bash(claude mcp add:*)",
-      "Bash(chmod:*)"
+      "Bash(chmod:*)",
+      "Bash(cat:*)"
     ],
     "deny": [],
     "ask": []
