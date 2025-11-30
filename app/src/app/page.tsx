@@ -1,7 +1,7 @@
 "use client"
 
-import { useMemo, useState } from "react"
-import { CheckCircle2, Circle, Loader2, AlertCircle, ArrowRight } from "lucide-react"
+import { useEffect, useMemo, useState } from "react"
+import { AlertCircle, ArrowRight, CheckCircle2, ChevronRight, Loader2 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import {
   Table,
   TableBody,
@@ -27,8 +28,19 @@ type CredentialTypeValue =
   | "TWENTY_BASE_URL"
   | "TWENTY_API_TOKEN"
   | "ATTIO_API_TOKEN"
-  | "TOOL_TOKEN"
   | "NOTIFICATION_WEBHOOK"
+
+const TWENTY_CLOUD_BASE_URL = "https://app.twenty.com"
+const TWENTY_CUSTOM_PLACEHOLDER = "https://crm.yourdomain.com"
+
+const isValidUrl = (value: string) => {
+  try {
+    new URL(value)
+    return true
+  } catch {
+    return false
+  }
+}
 
 type StepId = "connect" | "source" | "destination" | "mapping"
 
@@ -38,10 +50,9 @@ type CredentialState = Record<
 >
 
 const createEmptyCredentialState = (): CredentialState => ({
-  TWENTY_BASE_URL: { value: "", status: "idle" },
+  TWENTY_BASE_URL: { value: TWENTY_CLOUD_BASE_URL, status: "idle" },
   TWENTY_API_TOKEN: { value: "", status: "idle" },
   ATTIO_API_TOKEN: { value: "", status: "idle" },
-  TOOL_TOKEN: { value: "", status: "idle" },
   NOTIFICATION_WEBHOOK: { value: "", status: "idle" },
 })
 
@@ -72,10 +83,10 @@ const credentialFields: Array<{
     placeholder: "at_{...}",
   },
   {
-    type: "TOOL_TOKEN",
-    label: "Internal tool token",
-    helper: "Used to trigger the downstream migration runner.",
-    placeholder: "tool_{...}",
+    type: "NOTIFICATION_WEBHOOK",
+    label: "Notification webhook URL",
+    helper: "HTTP(S) endpoint to receive migration status notifications.",
+    placeholder: "https://your-domain.com/webhook",
   },
 ]
 
@@ -83,42 +94,120 @@ const wizardSteps: Array<{
   id: StepId
   title: string
   description: string
+  breadcrumb: string
 }> = [
   {
     id: "connect",
     title: "Connect data sources",
     description: "Validate the Twenty base URL, API token, Attio token, and tool token.",
+    breadcrumb: "Connect",
   },
   {
     id: "source",
     title: "Select Twenty entities & fields",
     description: "Decide which tables and columns we should migrate.",
+    breadcrumb: "Select Twenty",
   },
   {
     id: "destination",
     title: "Review Attio schema",
     description: "Pick the destination objects + fields that will receive data.",
+    breadcrumb: "Review Attio",
   },
   {
     id: "mapping",
     title: "Confirm mappings & schedule",
     description: "Map fields, estimate runtime, and queue the migration.",
+    breadcrumb: "Confirm & run",
   },
 ]
+
+const SESSION_KEY = "beton-trolley-wizard-session"
+const SESSION_EXPIRY_MS = 30 * 60 * 1000 // 30 minutes
+
+interface EntitySelection {
+  entityName: string
+  system: "TWENTY" | "ATTIO"
+  includeInSync: boolean
+}
+
+interface WizardSession {
+  activeStep: StepId
+  credentialState: CredentialState
+  twentyDomainMode: "cloud" | "custom"
+  customTwentyUrl: string
+  entitySelections: EntitySelection[]
+  previewData: Record<string, Record<string, unknown>[]>
+  timestamp: number
+}
 
 export default function MigrationWizardPage() {
   const [activeStep, setActiveStep] = useState<StepId>("connect")
   const [credentialState, setCredentialState] = useState<CredentialState>(createEmptyCredentialState)
+  const [twentyDomainMode, setTwentyDomainMode] = useState<"cloud" | "custom">("cloud")
+  const [customTwentyUrl, setCustomTwentyUrl] = useState("")
+  const [sessionLoaded, setSessionLoaded] = useState(false)
+  const [fieldCounts, setFieldCounts] = useState<Record<string, number>>({})
+  const [entitySelections, setEntitySelections] = useState<EntitySelection[]>([])
+  const [previewData, setPreviewData] = useState<Record<string, Record<string, unknown>[]>>({})
+
+  // Load session from localStorage on mount
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(SESSION_KEY)
+      if (stored) {
+        const session: WizardSession = JSON.parse(stored)
+        const now = Date.now()
+
+        // Check if session is still valid (within 30 minutes)
+        if (now - session.timestamp < SESSION_EXPIRY_MS) {
+          setActiveStep(session.activeStep)
+          setCredentialState(session.credentialState)
+          setTwentyDomainMode(session.twentyDomainMode)
+          setCustomTwentyUrl(session.customTwentyUrl)
+          setEntitySelections(session.entitySelections || [])
+          setPreviewData(session.previewData || {})
+        } else {
+          // Session expired, clear it
+          localStorage.removeItem(SESSION_KEY)
+        }
+      }
+    } catch (error) {
+      console.error("Failed to load wizard session:", error)
+      localStorage.removeItem(SESSION_KEY)
+    }
+    setSessionLoaded(true)
+  }, [])
+
+  // Save session to localStorage whenever state changes
+  useEffect(() => {
+    if (!sessionLoaded) return // Don't save until initial load is complete
+
+    try {
+      const session: WizardSession = {
+        activeStep,
+        credentialState,
+        twentyDomainMode,
+        customTwentyUrl,
+        entitySelections,
+        previewData,
+        timestamp: Date.now(),
+      }
+      localStorage.setItem(SESSION_KEY, JSON.stringify(session))
+    } catch (error) {
+      console.error("Failed to save wizard session:", error)
+    }
+  }, [activeStep, credentialState, twentyDomainMode, customTwentyUrl, entitySelections, previewData, sessionLoaded])
 
   const credentialMutation = api.credentials.validate.useMutation()
-  const saveEntities = api.selections.saveEntities.useMutation()
-  const saveFields = api.selections.saveFields.useMutation()
+  const twentyPreviewMutation = api.entities.sampleTwenty.useMutation()
+  const attioPreviewMutation = api.entities.sampleAttio.useMutation()
   const runState = api.migrations.listRuns.useQuery(undefined, {
-    refetchInterval: 4000,
+    refetchInterval: 30000,
   })
   const queueRun = api.migrations.queueRun.useMutation()
   const notificationsState = api.migrations.notifications.useQuery(undefined, {
-    refetchInterval: 6000,
+    refetchInterval: 30000,
   })
 
   const sourceEntities = api.entities.listTwenty.useQuery(undefined, {
@@ -129,14 +218,100 @@ export default function MigrationWizardPage() {
     enabled: false,
     retry: false,
   })
-  const selectionSnapshot = api.selections.list.useQuery(undefined, {
-    refetchOnWindowFocus: false,
-  })
+
+  // Batch-fetch all Twenty preview data when entities load
+  useEffect(() => {
+    const entities = sourceEntities.data as Array<{ namePlural: string }> | undefined
+    if (!entities || entities.length === 0) return
+
+    // Check if we already have all preview data
+    const hasAllPreviews = entities.every((entity) => previewData[`twenty:${entity.namePlural}`])
+    if (hasAllPreviews) return
+
+    // Batch-fetch all previews
+    ;(async () => {
+      const newPreviewData: Record<string, Record<string, unknown>[]> = { ...previewData }
+
+      for (const entity of entities) {
+        const key = `twenty:${entity.namePlural}`
+        if (!newPreviewData[key]) {
+          try {
+            const data = await twentyPreviewMutation.mutateAsync({ entityName: entity.namePlural })
+            newPreviewData[key] = Array.isArray(data) ? data : []
+
+            // Update field count
+            if (Array.isArray(data) && data.length > 0 && typeof data[0] === "object" && data[0] !== null) {
+              setFieldCounts(prev => ({ ...prev, [entity.namePlural]: Object.keys(data[0]).length }))
+            }
+          } catch (error) {
+            console.warn(`Failed to fetch preview for ${entity.namePlural}:`, error)
+            newPreviewData[key] = []
+          }
+        }
+      }
+
+      setPreviewData(newPreviewData)
+    })()
+  }, [sourceEntities.data])
+
+  // Batch-fetch all Attio preview data when objects load
+  useEffect(() => {
+    const objects = destinationObjects.data as Array<{ object_name: string }> | undefined
+    if (!objects || objects.length === 0) return
+
+    // Check if we already have all preview data
+    const hasAllPreviews = objects.every((obj) => previewData[`attio:${obj.object_name}`])
+    if (hasAllPreviews) return
+
+    // Batch-fetch all previews
+    ;(async () => {
+      const newPreviewData: Record<string, Record<string, unknown>[]> = { ...previewData }
+
+      for (const obj of objects) {
+        const key = `attio:${obj.object_name}`
+        if (!newPreviewData[key]) {
+          try {
+            const data = await attioPreviewMutation.mutateAsync({ objectName: obj.object_name })
+            newPreviewData[key] = Array.isArray(data) ? data : []
+
+            // Update field count
+            if (Array.isArray(data) && data.length > 0 && typeof data[0] === "object" && data[0] !== null) {
+              setFieldCounts(prev => ({ ...prev, [obj.object_name]: Object.keys(data[0]).length }))
+            }
+          } catch (error) {
+            console.warn(`Failed to fetch preview for ${obj.object_name}:`, error)
+            newPreviewData[key] = []
+          }
+        }
+      }
+
+      setPreviewData(newPreviewData)
+    })()
+  }, [destinationObjects.data])
+
+  // Handler for entity/object selection changes (local state only)
+  const handleEntitySelectionChange = (entityName: string, system: "TWENTY" | "ATTIO", includeInSync: boolean) => {
+    setEntitySelections((prev) => {
+      const existingIndex = prev.findIndex(
+        (selection) => selection.entityName === entityName && selection.system === system
+      )
+
+      if (existingIndex >= 0) {
+        // Update existing selection
+        const updated = [...prev]
+        updated[existingIndex] = { entityName, system, includeInSync }
+        return updated
+      } else {
+        // Add new selection
+        return [...prev, { entityName, system, includeInSync }]
+      }
+    })
+  }
 
   const handleCredentialValueChange = (type: CredentialTypeValue, value: string) => {
     setCredentialState((prev) => ({
       ...prev,
-      [type]: { ...prev[type], value },
+      [type]: { ...prev[type], value, status: "idle", message: undefined },
     }))
   }
 
@@ -165,6 +340,11 @@ export default function MigrationWizardPage() {
         ...prev,
         [type]: { ...prev[type], status: "success", message: "Validated" },
       }))
+
+      // Automatically fetch Attio objects after successful validation
+      if (type === "ATTIO_API_TOKEN") {
+        destinationObjects.refetch()
+      }
     } catch (error) {
       setCredentialState((prev) => ({
         ...prev,
@@ -191,8 +371,92 @@ export default function MigrationWizardPage() {
     }
   }
 
-  const canAdvanceFromConnect = credentialFields.every(
-    (field) => credentialState[field.type].status === "success"
+  const handleTwentyDomainModeChange = (mode: "cloud" | "custom") => {
+    if (!mode) return
+    setTwentyDomainMode(mode)
+    handleCredentialValueChange("TWENTY_BASE_URL", mode === "cloud" ? TWENTY_CLOUD_BASE_URL : customTwentyUrl)
+  }
+
+  const handleCustomTwentyDomainChange = (value: string) => {
+    setCustomTwentyUrl(value)
+    if (twentyDomainMode === "custom") {
+      handleCredentialValueChange("TWENTY_BASE_URL", value)
+    }
+  }
+
+  const handleTwentyValidate = async () => {
+    const baseUrl = credentialState.TWENTY_BASE_URL.value.trim()
+    const token = credentialState.TWENTY_API_TOKEN.value.trim()
+
+    if (!baseUrl || !token) {
+      return
+    }
+
+    setCredentialState((prev) => ({
+      ...prev,
+      TWENTY_BASE_URL: { ...prev.TWENTY_BASE_URL, status: "pending", message: undefined },
+      TWENTY_API_TOKEN: { ...prev.TWENTY_API_TOKEN, status: "pending", message: undefined },
+    }))
+
+    try {
+      await credentialMutation.mutateAsync({
+        type: "TWENTY_BASE_URL",
+        secret: baseUrl,
+        baseUrl,
+      })
+      setCredentialState((prev) => ({
+        ...prev,
+        TWENTY_BASE_URL: { ...prev.TWENTY_BASE_URL, status: "success", message: "Workspace saved" },
+      }))
+    } catch (error) {
+      setCredentialState((prev) => ({
+        ...prev,
+        TWENTY_BASE_URL: {
+          ...prev.TWENTY_BASE_URL,
+          status: "error",
+          message:
+            error instanceof Error ? error.message : "Unable to save the workspace URL. Verify it.",
+        },
+        TWENTY_API_TOKEN: { ...prev.TWENTY_API_TOKEN, status: "idle", message: undefined },
+      }))
+      return
+    }
+
+    try {
+      await credentialMutation.mutateAsync({
+        type: "TWENTY_API_TOKEN",
+        secret: token,
+        baseUrl,
+      })
+      setCredentialState((prev) => ({
+        ...prev,
+        TWENTY_API_TOKEN: { ...prev.TWENTY_API_TOKEN, status: "success", message: "Token validated" },
+      }))
+
+      // Automatically fetch Twenty entities after successful validation
+      sourceEntities.refetch()
+    } catch (error) {
+      setCredentialState((prev) => ({
+        ...prev,
+        TWENTY_API_TOKEN: {
+          ...prev.TWENTY_API_TOKEN,
+          status: "error",
+          message:
+            error instanceof Error
+              ? error.message
+              : "Unable to validate the token. Confirm the value and try again.",
+        },
+      }))
+    }
+  }
+
+  const requiredConnectTypes: CredentialTypeValue[] = [
+    "TWENTY_BASE_URL",
+    "TWENTY_API_TOKEN",
+    "ATTIO_API_TOKEN",
+  ]
+  const canAdvanceFromConnect = requiredConnectTypes.every(
+    (type) => credentialState[type].status === "success"
   )
 
   const stepIndex = wizardSteps.findIndex((step) => step.id === activeStep)
@@ -204,15 +468,23 @@ export default function MigrationWizardPage() {
   }
 
   const summary = useMemo(() => {
-    const entities =
-      selectionSnapshot.data?.filter((selection) => selection.includeInSync) ?? []
-    const sourceFieldCount = entities.reduce((total, entity) => total + entity.fields.length, 0)
+    const entities = entitySelections.filter((selection) => selection.includeInSync)
 
     return {
       entities,
-      sourceFieldCount,
+      sourceFieldCount: 0, // Will be calculated from actual field data if needed
     }
-  }, [selectionSnapshot.data])
+  }, [entitySelections])
+
+  const trimmedCustomTwentyUrl = customTwentyUrl.trim()
+  const customTwentyUrlError =
+    twentyDomainMode === "custom" && trimmedCustomTwentyUrl.length > 0 && !isValidUrl(trimmedCustomTwentyUrl)
+      ? "Enter a valid https:// URL."
+      : undefined
+  const canValidateTwenty =
+    credentialState.TWENTY_API_TOKEN.value.trim().length > 0 &&
+    (twentyDomainMode === "cloud" ||
+      (trimmedCustomTwentyUrl.length > 0 && isValidUrl(trimmedCustomTwentyUrl)))
 
   return (
     <main className="mx-auto flex max-w-6xl flex-col gap-8 px-4 py-10">
@@ -229,42 +501,13 @@ export default function MigrationWizardPage() {
         </p>
       </header>
 
-      <section className="grid gap-6 lg:grid-cols-[280px,1fr]">
-        <Card className="h-fit">
-          <CardHeader>
-            <CardTitle>Progress</CardTitle>
-            <CardDescription>Each step saves to the database automatically.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {wizardSteps.map((step, index) => {
-              const isActive = activeStep === step.id
-              const isComplete = index < stepIndex
-              return (
-                <button
-                  key={step.id}
-                  type="button"
-                  onClick={() => setActiveStep(step.id)}
-                  className={cn(
-                    "flex w-full items-start gap-3 rounded-lg border border-transparent px-2 py-1.5 text-left transition hover:bg-muted",
-                    isActive && "border-primary/40 bg-muted",
-                    isComplete && "opacity-80"
-                  )}
-                >
-                  {isComplete ? (
-                    <CheckCircle2 className="mt-0.5 h-4 w-4 text-primary" />
-                  ) : (
-                    <Circle className="mt-0.5 h-4 w-4 text-muted-foreground" />
-                  )}
-                  <div>
-                    <p className="text-sm font-medium text-foreground">{step.title}</p>
-                    <p className="text-xs text-muted-foreground">{step.description}</p>
-                  </div>
-                </button>
-              )
-            })}
-          </CardContent>
-        </Card>
+      <StepBreadcrumbs
+        steps={wizardSteps}
+        activeStep={activeStep}
+        onSelect={(id) => setActiveStep(id)}
+      />
 
+      <section className="space-y-6">
         <Card>
           <CardHeader>
             <CardTitle>{wizardSteps[stepIndex]?.title}</CardTitle>
@@ -278,6 +521,13 @@ export default function MigrationWizardPage() {
                 onValueChange={handleCredentialValueChange}
                 onValidate={handleCredentialValidation}
                 isMutating={credentialMutation.isPending}
+                twentyMode={twentyDomainMode}
+                onTwentyModeChange={handleTwentyDomainModeChange}
+                customTwentyUrl={customTwentyUrl}
+                onCustomTwentyUrlChange={handleCustomTwentyDomainChange}
+                canValidateTwenty={canValidateTwenty}
+                customTwentyUrlError={customTwentyUrlError}
+                onTwentyValidate={handleTwentyValidate}
               />
             )}
 
@@ -286,17 +536,12 @@ export default function MigrationWizardPage() {
                 fetchState={sourceEntities}
                 onFetch={() => sourceEntities.refetch()}
                 onSelectionChange={(entityName, include) =>
-                  saveEntities.mutate({
-                    system: "TWENTY",
-                    entities: [
-                      {
-                        name: entityName,
-                        includeInSync: include,
-                      },
-                    ],
-                  })
+                  handleEntitySelectionChange(entityName, "TWENTY", include)
                 }
-                saveState={saveEntities}
+                fieldCounts={fieldCounts}
+                onFieldCountUpdate={setFieldCounts}
+                entitySelections={entitySelections}
+                previewData={previewData}
               />
             )}
 
@@ -305,25 +550,18 @@ export default function MigrationWizardPage() {
                 fetchState={destinationObjects}
                 onFetch={() => destinationObjects.refetch()}
                 onSelectionChange={(objectName, include) =>
-                  saveEntities.mutate({
-                    system: "ATTIO",
-                    entities: [
-                      {
-                        name: objectName,
-                        includeInSync: include,
-                      },
-                    ],
-                  })
+                  handleEntitySelectionChange(objectName, "ATTIO", include)
                 }
-                saveState={saveEntities}
+                fieldCounts={fieldCounts}
+                onFieldCountUpdate={setFieldCounts}
+                entitySelections={entitySelections}
+                previewData={previewData}
               />
             )}
 
             {activeStep === "mapping" && (
               <MappingStep
                 summary={summary}
-                selectionState={selectionSnapshot}
-                mappingState={saveFields}
                 runState={runState}
                 queueRun={queueRun}
                 notificationsState={notificationsState}
@@ -352,59 +590,286 @@ export default function MigrationWizardPage() {
   )
 }
 
+function StepBreadcrumbs({
+  steps,
+  activeStep,
+  onSelect,
+}: {
+  steps: typeof wizardSteps
+  activeStep: StepId
+  onSelect: (id: StepId) => void
+}) {
+  const currentIndex = steps.findIndex((step) => step.id === activeStep)
+
+  return (
+    <nav aria-label="Wizard progress" className="overflow-x-auto">
+      <ol className="flex items-center gap-2 text-sm">
+        {steps.map((step, index) => {
+          const isPast = index < currentIndex
+          const isCurrent = index === currentIndex
+          return (
+            <li key={step.id} className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => onSelect(step.id)}
+                className={cn(
+                  "flex items-center gap-2 rounded-full border px-3 py-1.5 transition",
+                  isCurrent
+                    ? "border-primary/50 bg-primary/10 text-primary"
+                    : isPast
+                      ? "border-border bg-background text-foreground hover:border-primary/30"
+                      : "border-dashed border-border text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <span className="text-[11px] font-semibold uppercase tracking-wide">
+                  {String(index + 1).padStart(2, "0")}
+                </span>
+                <span className="text-xs font-medium">{step.breadcrumb}</span>
+              </button>
+              {index < steps.length - 1 && (
+                <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+              )}
+            </li>
+          )
+        })}
+      </ol>
+    </nav>
+  )
+}
+
 function ConnectStep({
   credentialState,
   onValueChange,
   onValidate,
   isMutating,
+  twentyMode,
+  onTwentyModeChange,
+  customTwentyUrl,
+  onCustomTwentyUrlChange,
+  canValidateTwenty,
+  customTwentyUrlError,
+  onTwentyValidate,
 }: {
   credentialState: CredentialState
   onValueChange: (type: CredentialTypeValue, value: string) => void
   onValidate: (type: CredentialTypeValue) => Promise<void>
   isMutating: boolean
+  twentyMode: "cloud" | "custom"
+  onTwentyModeChange: (mode: "cloud" | "custom") => void
+  customTwentyUrl: string
+  onCustomTwentyUrlChange: (value: string) => void
+  canValidateTwenty: boolean
+  customTwentyUrlError?: string
+  onTwentyValidate: () => Promise<void>
 }) {
+  const secondaryFields = credentialFields.filter((field) =>
+    ["ATTIO_API_TOKEN", "NOTIFICATION_WEBHOOK"].includes(field.type)
+  )
+
   return (
     <div className="space-y-6">
-      {credentialFields.map((field) => {
-        const state = credentialState[field.type]
-        return (
-          <div
-            key={field.type}
-            className="flex flex-col gap-3 rounded-lg border border-border p-4 lg:flex-row lg:items-center lg:justify-between"
-          >
-            <div className="space-y-1">
-              <Label className="text-sm font-medium">{field.label}</Label>
-              <p className="text-xs text-muted-foreground">{field.helper}</p>
-              <Input
-                className="mt-2 w-full"
-                placeholder={field.placeholder}
-                value={state?.value ?? ""}
-                onChange={(event) => onValueChange(field.type, event.target.value)}
-                disabled={isMutating && state?.status === "pending"}
-              />
-            </div>
+      <TwentyCredentialCard
+        mode={twentyMode}
+        onModeChange={onTwentyModeChange}
+        customUrl={customTwentyUrl}
+        onCustomUrlChange={onCustomTwentyUrlChange}
+        customUrlError={customTwentyUrlError}
+        tokenValue={credentialState.TWENTY_API_TOKEN.value}
+        onTokenChange={(value) => onValueChange("TWENTY_API_TOKEN", value)}
+        baseState={credentialState.TWENTY_BASE_URL}
+        tokenState={credentialState.TWENTY_API_TOKEN}
+        canValidate={canValidateTwenty}
+        onValidate={onTwentyValidate}
+        isMutating={isMutating}
+      />
 
-            <div className="flex flex-col gap-2">
-              <Button
-                variant="secondary"
-                onClick={() => onValidate(field.type)}
-                disabled={!state?.value || isMutating}
-              >
-                {state?.status === "pending" ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Validating…
-                  </>
-                ) : (
-                  "Validate"
-                )}
-              </Button>
-              <CredentialStatusBadge status={state?.status ?? "idle"} message={state?.message} />
-            </div>
-          </div>
-        )
-      })}
+      <div className="grid gap-4">
+        {secondaryFields.map((field) => (
+          <CredentialFieldCard
+            key={field.type}
+            field={field}
+            value={credentialState[field.type]?.value ?? ""}
+            status={credentialState[field.type]?.status ?? "idle"}
+            message={credentialState[field.type]?.message}
+            onChange={(value) => onValueChange(field.type, value)}
+            onValidate={() => onValidate(field.type)}
+            disabled={isMutating && credentialState[field.type]?.status === "pending"}
+            isMutating={isMutating}
+          />
+        ))}
+      </div>
     </div>
+  )
+}
+
+function TwentyCredentialCard({
+  mode,
+  onModeChange,
+  customUrl,
+  onCustomUrlChange,
+  customUrlError,
+  tokenValue,
+  onTokenChange,
+  baseState,
+  tokenState,
+  canValidate,
+  onValidate,
+  isMutating,
+}: {
+  mode: "cloud" | "custom"
+  onModeChange: (mode: "cloud" | "custom") => void
+  customUrl: string
+  onCustomUrlChange: (value: string) => void
+  customUrlError?: string
+  tokenValue: string
+  onTokenChange: (value: string) => void
+  baseState: CredentialState["TWENTY_BASE_URL"]
+  tokenState: CredentialState["TWENTY_API_TOKEN"]
+  canValidate: boolean
+  onValidate: () => Promise<void>
+  isMutating: boolean
+}) {
+  const isPending = baseState.status === "pending" || tokenState.status === "pending"
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Twenty workspace access</CardTitle>
+        <CardDescription>Pick your workspace domain and validate the token together.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <div className="space-y-2">
+          <Label className="text-xs font-semibold uppercase text-muted-foreground">Workspace</Label>
+          <ToggleGroup
+            type="single"
+            value={mode}
+            onValueChange={(value) => value && onModeChange(value as "cloud" | "custom")}
+            className="flex w-full gap-2"
+          >
+            <ToggleGroupItem value="cloud" className="flex-1" aria-label="Use Twenty Cloud">
+              Twenty Cloud
+            </ToggleGroupItem>
+            <ToggleGroupItem value="custom" className="flex-1" aria-label="Use custom domain">
+              Custom domain
+            </ToggleGroupItem>
+          </ToggleGroup>
+          {mode === "custom" ? (
+            <div className="space-y-1">
+              <Input
+                placeholder={TWENTY_CUSTOM_PLACEHOLDER}
+                value={customUrl}
+                onChange={(event) => onCustomUrlChange(event.target.value)}
+                className="max-w-xl"
+              />
+              {customUrlError ? (
+                <p className="text-xs text-destructive">{customUrlError}</p>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Provide the full https:// URL for your Twenty deployment.
+                </p>
+              )}
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              Using the managed Twenty Cloud endpoint ({TWENTY_CLOUD_BASE_URL}).
+            </p>
+          )}
+        </div>
+
+        <div className="space-y-2">
+          <Label className="text-xs font-semibold uppercase text-muted-foreground">API token</Label>
+          <Input
+            placeholder="tw_{...}"
+            value={tokenValue}
+            onChange={(event) => onTokenChange(event.target.value)}
+            className="max-w-xl"
+          />
+        </div>
+
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <Button
+            onClick={onValidate}
+            disabled={!canValidate || isMutating}
+            className="w-full sm:w-auto sm:min-w-[160px]"
+          >
+            {isPending ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Validating…
+              </>
+            ) : (
+              "Save Twenty access"
+            )}
+          </Button>
+          <div className="flex flex-wrap gap-2">
+            <CredentialStatusBadge status={baseState.status} message={baseState.message} />
+            <CredentialStatusBadge status={tokenState.status} message={tokenState.message} />
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function CredentialFieldCard({
+  field,
+  value,
+  status,
+  message,
+  onChange,
+  onValidate,
+  disabled,
+  isMutating,
+}: {
+  field: (typeof credentialFields)[number]
+  value: string
+  status: CredentialState[CredentialTypeValue]["status"]
+  message?: string
+  onChange: (value: string) => void
+  onValidate: () => Promise<void>
+  disabled: boolean
+  isMutating: boolean
+}) {
+  return (
+    <Card>
+      <CardHeader className="space-y-1">
+        <CardTitle className="text-base">{field.label}</CardTitle>
+        <CardDescription className="text-sm text-muted-foreground">
+          {field.helper}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div className="flex flex-1 flex-col gap-1">
+          <Label className="text-xs uppercase tracking-wide text-muted-foreground">Value</Label>
+          <Input
+            className="mt-1 w-full max-w-[18rem] sm:max-w-[20rem]"
+            placeholder={field.placeholder}
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+            disabled={disabled}
+          />
+        </div>
+
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center lg:flex-col lg:items-end">
+          <Button
+            variant="default"
+            className="w-full min-w-[140px] sm:w-auto lg:min-w-[150px]"
+            onClick={onValidate}
+            disabled={!value || isMutating}
+          >
+            {status === "pending" ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Validating…
+              </>
+            ) : (
+              "Validate"
+            )}
+          </Button>
+          <CredentialStatusBadge status={status} message={message} />
+        </div>
+      </CardContent>
+    </Card>
   )
 }
 
@@ -448,39 +913,64 @@ function EntitySelectionStep({
   fetchState,
   onFetch,
   onSelectionChange,
-  saveState,
+  fieldCounts,
+  onFieldCountUpdate,
+  entitySelections,
+  previewData,
 }: {
   fetchState: EntityQuery
   onFetch: () => void
   onSelectionChange: (entityName: string, include: boolean) => void
-  saveState: ReturnType<typeof api.selections.saveEntities.useMutation>
+  fieldCounts: Record<string, number>
+  onFieldCountUpdate: React.Dispatch<React.SetStateAction<Record<string, number>>>
+  entitySelections: EntitySelection[]
+  previewData: Record<string, Record<string, unknown>[]>
 }) {
   const entities = (fetchState.data ?? []) as Array<
     {
-      name: string
-      label?: string
+      id: string
+      nameSingular: string
+      namePlural: string
+      labelSingular?: string
+      labelPlural?: string
       fields: Array<{ name: string }>
     }
   >
+
+  // Create a map of entity names to their selection status
+  const selectionMap = useMemo(() => {
+    const map: Record<string, boolean> = {}
+    entitySelections.forEach((selection) => {
+      if (selection.system === "TWENTY") {
+        map[selection.entityName] = selection.includeInSync
+      }
+    })
+    return map
+  }, [entitySelections])
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-sm font-semibold text-foreground">Twenty entities</p>
           <p className="text-sm text-muted-foreground">
-            Fetch metadata directly from the configured base URL.
+            {fetchState.isFetching && entities.length === 0
+              ? "Loading entities from your workspace..."
+              : "Entities are loaded automatically when credentials are validated."}
           </p>
         </div>
-        <Button onClick={onFetch} disabled={fetchState.isFetching}>
-          {fetchState.isFetching ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Refreshing
-            </>
-          ) : (
-            "Fetch entities"
-          )}
-        </Button>
+        {entities.length > 0 && (
+          <Button onClick={onFetch} disabled={fetchState.isFetching} variant="outline" size="sm">
+            {fetchState.isFetching ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Refreshing
+              </>
+            ) : (
+              "Refresh"
+            )}
+          </Button>
+        )}
       </div>
 
       {fetchState.error && (
@@ -489,10 +979,15 @@ function EntitySelectionStep({
         </div>
       )}
 
-      {entities.length === 0 ? (
-        <EmptyState message="Once credentials are valid you can pull entities from Twenty." />
+      {fetchState.isFetching && entities.length === 0 ? (
+        <div className="flex items-center justify-center gap-2 rounded-md border border-dashed border-border p-12 text-sm text-muted-foreground">
+          <Loader2 className="h-5 w-5 animate-spin" />
+          <p>Loading entities from Twenty...</p>
+        </div>
+      ) : entities.length === 0 ? (
+        <EmptyState message="No entities found. Check your Twenty credentials and try again." />
       ) : (
-        <ScrollArea className="max-h-[420px] rounded-md border border-border">
+        <div className="max-h-[420px] overflow-auto rounded-md border border-border">
           <Table>
             <TableHeader>
               <TableRow>
@@ -504,32 +999,37 @@ function EntitySelectionStep({
             </TableHeader>
             <TableBody>
               {entities.map((entity) => (
-                <TableRow key={entity.name}>
+                <TableRow key={entity.id}>
                   <TableCell>
                     <Checkbox
+                      checked={selectionMap[entity.nameSingular] ?? false}
                       onCheckedChange={(checked) =>
-                        onSelectionChange(entity.name, Boolean(checked))
+                        onSelectionChange(entity.nameSingular, Boolean(checked))
                       }
                     />
                   </TableCell>
                   <TableCell>
-                    <div className="font-medium">{entity.label ?? entity.name}</div>
-                    <p className="text-xs text-muted-foreground">{entity.name}</p>
+                    <div className="font-medium">{entity.labelSingular ?? entity.nameSingular}</div>
+                    <p className="text-xs text-muted-foreground">{entity.nameSingular}</p>
                   </TableCell>
-                  <TableCell>{entity.fields.length}</TableCell>
+                  <TableCell>{fieldCounts[entity.namePlural] ?? entity.fields.length}</TableCell>
                   <TableCell>
-                    <SamplePreviewButton variant="twenty" name={entity.name} />
+                    <SamplePreviewButton
+                      variant="twenty"
+                      name={entity.namePlural}
+                      cachedData={previewData[`twenty:${entity.namePlural}`]}
+                      onFieldCountCalculated={(count) => {
+                        onFieldCountUpdate(prev => ({ ...prev, [entity.namePlural]: count }))
+                      }}
+                    />
                   </TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
-        </ScrollArea>
+        </div>
       )}
 
-      {saveState.error && (
-        <p className="text-xs text-destructive">{saveState.error.message}</p>
-      )}
     </div>
   )
 }
@@ -540,37 +1040,60 @@ function DestinationSelectionStep({
   fetchState,
   onFetch,
   onSelectionChange,
-  saveState,
+  fieldCounts,
+  onFieldCountUpdate,
+  entitySelections,
+  previewData,
 }: {
   fetchState: DestinationQuery
   onFetch: () => void
   onSelectionChange: (objectName: string, include: boolean) => void
-  saveState: ReturnType<typeof api.selections.saveEntities.useMutation>
+  fieldCounts: Record<string, number>
+  onFieldCountUpdate: React.Dispatch<React.SetStateAction<Record<string, number>>>
+  entitySelections: EntitySelection[]
+  previewData: Record<string, Record<string, unknown>[]>
 }) {
   const objects = (fetchState.data ?? []) as Array<{
+    id?: string
     object_name: string
     label?: string
-    fields: Array<{ name: string }>
+    fields?: Array<{ name: string }>
   }>
+
+  // Create a map of object names to their selection status
+  const selectionMap = useMemo(() => {
+    const map: Record<string, boolean> = {}
+    entitySelections.forEach((selection) => {
+      if (selection.system === "ATTIO") {
+        map[selection.entityName] = selection.includeInSync
+      }
+    })
+    return map
+  }, [entitySelections])
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-sm font-semibold text-foreground">Attio objects</p>
           <p className="text-sm text-muted-foreground">
-            Decide which objects we should populate during the migration.
+            {fetchState.isFetching && objects.length === 0
+              ? "Loading objects from your workspace..."
+              : "Objects are loaded automatically when credentials are validated."}
           </p>
         </div>
-        <Button onClick={onFetch} disabled={fetchState.isFetching}>
-          {fetchState.isFetching ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Refreshing
-            </>
-          ) : (
-            "Fetch objects"
-          )}
-        </Button>
+        {objects.length > 0 && (
+          <Button onClick={onFetch} disabled={fetchState.isFetching} variant="outline" size="sm">
+            {fetchState.isFetching ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Refreshing
+              </>
+            ) : (
+              "Refresh"
+            )}
+          </Button>
+        )}
       </div>
 
       {fetchState.error && (
@@ -579,10 +1102,15 @@ function DestinationSelectionStep({
         </div>
       )}
 
-      {objects.length === 0 ? (
-        <EmptyState message="Use the button above to load the Attio object catalog." />
+      {fetchState.isFetching && objects.length === 0 ? (
+        <div className="flex items-center justify-center gap-2 rounded-md border border-dashed border-border p-12 text-sm text-muted-foreground">
+          <Loader2 className="h-5 w-5 animate-spin" />
+          <p>Loading objects from Attio...</p>
+        </div>
+      ) : objects.length === 0 ? (
+        <EmptyState message="No objects found. Check your Attio credentials and try again." />
       ) : (
-        <ScrollArea className="max-h-[420px] rounded-md border border-border">
+        <div className="max-h-[420px] overflow-auto rounded-md border border-border">
           <Table>
             <TableHeader>
               <TableRow>
@@ -593,10 +1121,11 @@ function DestinationSelectionStep({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {objects.map((object) => (
-                <TableRow key={object.object_name}>
+              {objects.map((object, index) => (
+                <TableRow key={`${object.object_name}-${index}`}>
                   <TableCell>
                     <Checkbox
+                      checked={selectionMap[object.object_name] ?? false}
                       onCheckedChange={(checked) =>
                         onSelectionChange(object.object_name, Boolean(checked))
                       }
@@ -606,43 +1135,38 @@ function DestinationSelectionStep({
                     <div className="font-medium">{object.label ?? object.object_name}</div>
                     <p className="text-xs text-muted-foreground">{object.object_name}</p>
                   </TableCell>
-                  <TableCell>{object.fields.length}</TableCell>
+                  <TableCell>{fieldCounts[object.object_name] ?? object.fields?.length ?? 0}</TableCell>
                   <TableCell>
-                    <SamplePreviewButton variant="attio" name={object.object_name} />
+                    <SamplePreviewButton
+                      variant="attio"
+                      name={object.object_name}
+                      cachedData={previewData[`attio:${object.object_name}`]}
+                      onFieldCountCalculated={(count) => {
+                        onFieldCountUpdate(prev => ({ ...prev, [object.object_name]: count }))
+                      }}
+                    />
                   </TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
-        </ScrollArea>
+        </div>
       )}
 
-      {saveState.error && (
-        <p className="text-xs text-destructive">{saveState.error.message}</p>
-      )}
     </div>
   )
 }
 
 function MappingStep({
   summary,
-  selectionState,
-  mappingState,
   runState,
   queueRun,
   notificationsState,
 }: {
   summary: {
-    entities: Array<{
-      id: string
-      entityName: string
-      entityLabel: string | null
-      fields: Array<{ id: string; fieldName: string; fieldLabel: string | null }>
-    }>
+    entities: EntitySelection[]
     sourceFieldCount: number
   }
-  selectionState: ReturnType<typeof api.selections.list.useQuery>
-  mappingState: ReturnType<typeof api.selections.saveFields.useMutation>
   runState: ReturnType<typeof api.migrations.listRuns.useQuery>
   queueRun: ReturnType<typeof api.migrations.queueRun.useMutation>
   notificationsState: ReturnType<typeof api.migrations.notifications.useQuery>
@@ -706,59 +1230,26 @@ function MappingStep({
         </p>
       </div>
 
-      {selectionState.isLoading ? (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          Loading selections…
-        </div>
-      ) : summary.entities.length === 0 ? (
+      {summary.entities.length === 0 ? (
         <EmptyState message="No selections saved yet. Complete the previous steps to see a mapping preview." />
       ) : (
         <div className="space-y-3">
-          {summary.entities.map((entity) => (
-            <div key={entity.id} className="rounded-lg border border-border p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-medium text-foreground">
-                    {entity.entityLabel ?? entity.entityName}
-                  </p>
-                  <p className="text-xs text-muted-foreground">{entity.entityName}</p>
-                </div>
-                <Badge variant="outline">{entity.fields.length} fields</Badge>
-              </div>
-              <Separator className="my-3" />
-              <div className="grid gap-3 md:grid-cols-2">
-                {entity.fields.map((field) => (
-                  <div
-                    key={field.id}
-                    className="rounded-md border border-dashed border-border/80 p-3 text-sm"
-                  >
-                    <p className="font-medium text-foreground">
-                      {field.fieldLabel ?? field.fieldName}
-                    </p>
-                    <p className="text-xs text-muted-foreground">{field.fieldName}</p>
-                    <Textarea
-                      className="mt-2"
-                      placeholder="Describe the Attio field this should map to…"
-                      onBlur={(event) =>
-                        mappingState.mutate({
-                          entityId: entity.id,
-                          fields: [
-                            {
-                              name: field.fieldName,
-                              label: field.fieldLabel ?? undefined,
-                              isSelected: Boolean(event.target.value),
-                              sampleValue: event.target.value,
-                            },
-                          ],
-                        })
-                      }
-                    />
+          <div className="rounded-lg border border-border p-4">
+            <p className="text-sm font-semibold text-foreground mb-3">Selected Entities</p>
+            <div className="space-y-2">
+              {summary.entities.map((entity, index) => (
+                <div key={`${entity.system}-${entity.entityName}-${index}`} className="flex items-center justify-between py-2">
+                  <div>
+                    <p className="font-medium text-foreground">{entity.entityName}</p>
+                    <p className="text-xs text-muted-foreground">{entity.system}</p>
                   </div>
-                ))}
-              </div>
+                  <Badge variant={entity.system === "TWENTY" ? "default" : "secondary"}>
+                    {entity.system}
+                  </Badge>
+                </div>
+              ))}
             </div>
-          ))}
+          </div>
         </div>
       )}
 
@@ -907,29 +1398,32 @@ function EmptyState({ message }: { message: string }) {
   )
 }
 
-function SamplePreviewButton({ variant, name }: { variant: "twenty" | "attio"; name: string }) {
-  const twentyMutation = api.entities.sampleTwenty.useMutation()
-  const attioMutation = api.entities.sampleAttio.useMutation()
-  const isTwenty = variant === "twenty"
-  const [preview, setPreview] = useState<string | null>(null)
-  const isPending = isTwenty ? twentyMutation.isPending : attioMutation.isPending
+function SamplePreviewButton({
+  variant,
+  name,
+  cachedData,
+  onFieldCountCalculated,
+}: {
+  variant: "twenty" | "attio"
+  name: string
+  cachedData?: Record<string, unknown>[]
+  onFieldCountCalculated?: (count: number) => void
+}) {
+  const [showPreview, setShowPreview] = useState(false)
 
-  const handlePreview = async () => {
-    setPreview(null)
-    try {
-      const data =
-        isTwenty
-          ? await twentyMutation.mutateAsync({ entityName: name })
-          : await attioMutation.mutateAsync({ objectName: name })
-      setPreview(JSON.stringify(data.slice(0, 2), null, 2))
-    } catch (error) {
-      setPreview(
-        error instanceof Error
-          ? error.message
-          : "Unable to fetch sample data. Confirm credentials first."
-      )
+  const handlePreview = () => {
+    setShowPreview(!showPreview)
+
+    // Calculate field count from first record if not already calculated
+    if (cachedData && cachedData.length > 0 && typeof cachedData[0] === "object" && cachedData[0] !== null) {
+      const fieldCount = Object.keys(cachedData[0]).length
+      onFieldCountCalculated?.(fieldCount)
     }
   }
+
+  const previewText = cachedData
+    ? JSON.stringify(cachedData.slice(0, 2), null, 2)
+    : "Preview data not yet loaded. Please wait a moment."
 
   return (
     <div className="space-y-2">
@@ -938,20 +1432,13 @@ function SamplePreviewButton({ variant, name }: { variant: "twenty" | "attio"; n
         size="sm"
         className="text-primary"
         onClick={handlePreview}
-        disabled={isPending}
+        disabled={!cachedData}
       >
-        {isPending ? (
-          <>
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            Loading
-          </>
-        ) : (
-          "Preview"
-        )}
+        {showPreview ? "Hide" : "Preview"}
       </Button>
-      {preview && (
+      {showPreview && (
         <pre className="max-h-32 overflow-auto rounded-md bg-muted p-2 text-[11px] text-muted-foreground">
-          {preview}
+          {previewText}
         </pre>
       )}
     </div>

@@ -16,8 +16,9 @@
 1. Copy `.env.example` to `.env`.
 2. Update at least:
    - `DATABASE_URL` – Postgres connection string.
-   - `TWENTY_BASE_URL`, `TWENTY_API_TOKEN`, `TOOL_TOKEN`, `ATTIO_API_TOKEN`.
    - Optional: `NOTIFICATION_WEBHOOK_URL`, `LOG_LEVEL`.
+   - The Twenty + Attio credentials are entered directly in the migration wizard, so no extra env
+     variables are required for those tokens. The internal tool token is provisioned automatically.
 3. Restart `npm run dev` after changing env vars.
 
 ## Common Commands

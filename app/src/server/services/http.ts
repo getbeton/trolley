@@ -32,6 +32,27 @@ export async function fetchJson<TResponse>(
       throw new Error(`Request to ${url} failed with status ${response.status}`)
     }
 
+    const contentType = response.headers.get("content-type")
+    if (!contentType?.includes("application/json")) {
+      const text = await response.text()
+      logger.warn("HTTP request returned non-JSON response", {
+        url,
+        contentType,
+        bodyPreview: text.slice(0, 200),
+      })
+
+      const parsedUrl = new URL(url)
+      if (contentType?.includes("text/html")) {
+        throw new Error(
+          `API endpoint ${parsedUrl.pathname} returned HTML instead of JSON. ` +
+          `This usually means the endpoint doesn't exist or requires different authentication. ` +
+          `Check the API base URL and endpoint path.`
+        )
+      }
+
+      throw new Error(`Expected JSON from ${url}, but got ${contentType}`)
+    }
+
     return (await response.json()) as TResponse
   } catch (error) {
     logger.error("HTTP request threw", error instanceof Error ? error : undefined)

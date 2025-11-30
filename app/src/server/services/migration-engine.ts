@@ -133,7 +133,7 @@ export async function executeRun(runId: string, batches = DEFAULT_BATCHES) {
     },
   })
 
-  await deliverWebhookNotification(finalizedRun)
+  await deliverWebhookNotification(finalizedRun.id)
 
   logger.info("Migration run completed", { runId })
 }
@@ -160,7 +160,17 @@ export async function listRunsWithLogs(userId: string) {
   return runs
 }
 
-async function deliverWebhookNotification(run: Awaited<ReturnType<typeof prisma.migrationRun.update>>) {
+async function deliverWebhookNotification(runId: string) {
+  const run = await prisma.migrationRun.findUnique({
+    where: { id: runId },
+    include: { migration: true },
+  })
+
+  if (!run) {
+    logger.warn("Run not found when attempting to deliver webhook", { runId })
+    return
+  }
+
   const webhook = await prisma.credential.findUnique({
     where: {
       userId_type: {
@@ -177,13 +187,13 @@ async function deliverWebhookNotification(run: Awaited<ReturnType<typeof prisma.
 
   const notification = await prisma.webhookNotification.create({
     data: {
-      runId: run.id,
+      runId,
       event: WebhookEvent.MIGRATION_COMPLETED,
       status: WebhookStatus.PENDING,
       targetUrl: webhook.secret,
       payload: {
         migration: run.migration.name,
-        runId: run.id,
+        runId,
         recordsProcessed: run.recordsProcessed,
         completedAt: run.completedAt,
       },
