@@ -9,4 +9,10 @@ coverage/
 __pycache__/
 *.pyc
 
+# Documentation
 migration-docs/
+
+# Scripts and files with secrets
+setup-vercel-envs.sh
+.credentials.txt
+
